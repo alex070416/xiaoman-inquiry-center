@@ -1,0 +1,11 @@
+node_modules/
+dist/
+*.seed
+*.key
+*.sqlite
+*.log
+.env*
+wp-config.php
+site-profiles/
+audit/
+licensed-bricks/
