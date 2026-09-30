@@ -160,7 +160,8 @@ final class XI_Xiaoman_Queue_V1 {
   $key=strtolower(trim(self::text($raw,100)));
   $map=XI_Config::get()['products'];
   $value=$map[$key]??'';
-  return array('lead_name'=>$value!==''?$value:'其他','product_name'=>$value);
+  $lead=XI_Config::get()['product_lead_names'][$key]??'';
+  return array('lead_name'=>$lead!==''?$lead:($value!==''?$value:'其他'),'product_name'=>$value);
  }
  static function payload($submission,$submitted_at=null) {
   $submitted_at=$submitted_at??time(); $config=XI_Config::get();

@@ -29,8 +29,16 @@ final class XI_Compatibility {
   if(is_array($required)){update_option('xi_required_v1',$required,false);$c['post_type']=$required['post_type'];}
   if(class_exists('RF_Inquiry_Config',false))$c=array_merge($c,RF_Inquiry_Config::get());
   foreach(array('ORIGIN'=>'origin_id','ORIGIN_NAME'=>'origin_name','PRODUCT_FIELD'=>'product_field','CUSTOMER_LEVEL_FIELD'=>'level_field','CUSTOMER_LEVEL'=>'level_value','API'=>'api') as $old=>$new)if($p->hasConstant($old))$c[$new]=$p->getConstant($old);
-  // Derive labels/mapping through the existing pure lookup methods, never network calls.
-  foreach($c['taxonomies'] as $tax){$terms=get_terms(array('taxonomy'=>$tax,'hide_empty'=>false));if(is_wp_error($terms))continue;foreach($terms as $term){$label=$center::equipment($term);$c['equipment_labels'][$term->slug]=$label;if(is_callable(array($provider,'product_mapping'))){$m=$provider::product_mapping($label);if(is_array($m)&&!empty($m['product_name']))$c['products'][strtolower($label)]=$m['product_name'];}}}
+  // Older Fangwei uses term names directly and has no equipment() method.
+  // Preserve both CRM option values and the separate words used in lead names.
+  $labels=array('Other');
+  foreach($c['taxonomies'] as $tax){$terms=get_terms(array('taxonomy'=>$tax,'hide_empty'=>false));if(is_wp_error($terms))continue;foreach($terms as $term){$label=is_callable(array($center,'equipment'))?$center::equipment($term):$center::text($term->name,150);$c['equipment_labels'][$term->slug]=$label;$labels[]=$label;}}
+  // Quick form options can include labels absent from the product taxonomy.
+  global $wpdb;
+  $forms=$wpdb->get_results("SELECT m.meta_value FROM {$wpdb->postmeta} m JOIN {$wpdb->posts} p ON p.ID=m.post_id WHERE p.post_status='publish' AND m.meta_key IN ('_bricks_page_content_2','_bricks_page_header_2','_bricks_page_footer_2')",ARRAY_A);
+  if($wpdb->last_error)return new WP_Error('legacy_forms','无法读取原生表单映射，请先核对数据库。');
+  foreach($forms as $row){$elements=maybe_unserialize($row['meta_value']);if(!is_array($elements))continue;foreach($elements as $element){if(($element['name']??'')!=='form')continue;foreach(($element['settings']['fields']??array()) as $field){if(!in_array($field['name']??'',array('Equipment','F1'),true))continue;foreach(preg_split('/\r\n|\r|\n/',$field['options']??'') as $label){if(!empty($field['valueLabelOptions']))$label=explode(':',$label,2)[0];if(trim($label)!=='')$labels[]=trim($label);}}}}
+  foreach(array_unique($labels) as $label)if(is_callable(array($provider,'product_mapping'))){$m=$provider::product_mapping($label);$key=strtolower(trim($label));if(is_array($m)){if(isset($m['product_name'])&&$m['product_name']!=='')$c['products'][$key]=$m['product_name'];if(isset($m['lead_name'])&&$m['lead_name']!=='')$c['product_lead_names'][$key]=$m['lead_name'];}}
   foreach(array('id','secret') as $name){$value=XI_Config::credential($name);if($value!==''){$enc=XI_Config::encrypt($value);if(is_wp_error($enc))return $enc;$c['secrets'][$name]=$enc;}}
   $c['enabled']=false;$c['migration']=array('version'=>1,'at'=>gmdate('c'),'from'=>XI_Compatibility::legacy_active(),'status'=>'imported','record_count'=>0);
   return $c;

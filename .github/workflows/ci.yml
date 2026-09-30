@@ -13,6 +13,7 @@ jobs:
       - uses: actions/checkout@v4
       - run: find xiaoman-inquiry-center tools -name '*.php' -print0 | xargs -0 -n1 php -l
       - run: php tests/updater.test.php
+      - run: for site in fangwei huajing anxing rongfeng tongqu; do php tests/compatibility.test.php "$site" || exit 1; done
   frontend:
     runs-on: ubuntu-latest
     steps:

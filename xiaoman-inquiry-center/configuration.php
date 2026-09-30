@@ -2,7 +2,7 @@
 if(!defined('ABSPATH'))exit;
 final class XI_Config {
  const OPTION='xi_config_v2';
- static function defaults(){return array('enabled'=>false,'crm'=>true,'api'=>'https://api-sandbox.xiaoman.cn','number_prefix'=>'XI-N','post_type'=>'products','taxonomies'=>array(),'record_meta'=>'xi_native_record','queue_prefix'=>'xi_','queue_cursor'=>'xi_capture_cursor_v1','queue_cpt'=>'xi_job','legacy_job'=>'','legacy_sweep'=>'','legacy_group'=>'','legacy_cap'=>'','legacy_role'=>'','consent_service'=>'xiaoman-inquiry-attribution','origin_id'=>'','origin_name'=>'','product_field'=>'','level_field'=>'','level_value'=>'','products'=>array(),'equipment_labels'=>array(),'excluded_terms'=>array(),'field_aliases'=>array(),'secrets'=>array(),'migration'=>array());}
+ static function defaults(){return array('enabled'=>false,'crm'=>true,'api'=>'https://api-sandbox.xiaoman.cn','number_prefix'=>'XI-N','post_type'=>'products','taxonomies'=>array(),'record_meta'=>'xi_native_record','queue_prefix'=>'xi_','queue_cursor'=>'xi_capture_cursor_v1','queue_cpt'=>'xi_job','legacy_job'=>'','legacy_sweep'=>'','legacy_group'=>'','legacy_cap'=>'','legacy_role'=>'','consent_service'=>'xiaoman-inquiry-attribution','origin_id'=>'','origin_name'=>'','product_field'=>'','level_field'=>'','level_value'=>'','products'=>array(),'product_lead_names'=>array(),'equipment_labels'=>array(),'excluded_terms'=>array(),'field_aliases'=>array(),'secrets'=>array(),'migration'=>array());}
  static function get(){ $v=get_option(self::OPTION,array());return wp_parse_args(is_array($v)?$v:array(),self::defaults()); }
  static function credential($name){
   $constant=$name==='id'?'XIAOMAN_CLIENT_ID':'XIAOMAN_CLIENT_SECRET';
@@ -37,7 +37,7 @@ final class XI_Config {
    $c['post_type']=sanitize_key($_POST['post_type']??$c['post_type']);
    if(!post_type_exists($c['post_type']))wp_die('产品文章类型不存在。');
    $c['taxonomies']=array_values(array_filter(array_map('sanitize_key',preg_split('/[\s,]+/',wp_unslash($_POST['taxonomies']??''))),static function($t)use($c){return taxonomy_exists($t)&&is_object_in_taxonomy($c['post_type'],$t);}));
-   foreach(array('products','equipment_labels','field_aliases') as $key){$raw=json_decode(wp_unslash($_POST[$key]??'{}'),true);if(!is_array($raw))wp_die('映射必须为有效 JSON 对象。');$c[$key]=array();foreach($raw as $k=>$v)if(is_string($k)&&is_string($v))$c[$key][sanitize_text_field($k)]=sanitize_text_field($v);}
+   foreach(array('products','product_lead_names','equipment_labels','field_aliases') as $key){$raw=json_decode(wp_unslash($_POST[$key]??'{}'),true);if(!is_array($raw))wp_die('映射必须为有效 JSON 对象。');$c[$key]=array();foreach($raw as $k=>$v)if(is_string($k)&&is_string($v))$c[$key][sanitize_text_field($k)]=sanitize_text_field($v);}
    foreach(array('id','secret') as $key){$v=trim(wp_unslash($_POST['client_'.$key]??''));if($v!==''){$encrypted=self::encrypt($v);if(is_wp_error($encrypted))wp_die($encrypted->get_error_message());$c['secrets'][$key]=$encrypted;}}
    $c['enabled']=isset($_POST['enabled']);
    if($c['enabled']&&XI_Compatibility::legacy_active())wp_die('请先备份并停用旧询盘插件，避免重复提交。');
@@ -53,7 +53,7 @@ final class XI_Config {
   wp_nonce_field('xi_config_save');echo '<input type="hidden" name="action" value="xi_config_save"><table class="form-table">';
   foreach(array('origin_id'=>'小满来源 ID','origin_name'=>'线索名称来源词','product_field'=>'意向产品字段 ID','level_field'=>'客户等级字段 ID（可选）','level_value'=>'客户等级选项（可选）','post_type'=>'产品文章类型') as $key=>$label)echo '<tr><th>'.esc_html($label).'</th><td><input class="regular-text" name="'.esc_attr($key).'" value="'.esc_attr($c[$key]).'"></td></tr>';
   echo '<tr><th>产品分类</th><td><input class="large-text" name="taxonomies" value="'.esc_attr(implode(',',$c['taxonomies'])).'"></td></tr>';
-  foreach(array('products'=>'产品到小满选项映射','equipment_labels'=>'分类 slug 到产品类别名称','field_aliases'=>'自定义表单字段名到 F1/F2/F3/F4/F5/F6/F9') as $key=>$label)echo '<tr><th>'.esc_html($label).'</th><td><textarea name="'.esc_attr($key).'" rows="5" cols="70">'.esc_textarea(wp_json_encode((object)$c[$key],JSON_PRETTY_PRINT|JSON_UNESCAPED_UNICODE)).'</textarea></td></tr>';
+  foreach(array('products'=>'产品到小满选项映射','product_lead_names'=>'产品到线索名称词映射','equipment_labels'=>'分类 slug 到产品类别名称','field_aliases'=>'自定义表单字段名到 F1/F2/F3/F4/F5/F6/F9') as $key=>$label)echo '<tr><th>'.esc_html($label).'</th><td><textarea name="'.esc_attr($key).'" rows="5" cols="70">'.esc_textarea(wp_json_encode((object)$c[$key],JSON_PRETTY_PRINT|JSON_UNESCAPED_UNICODE)).'</textarea></td></tr>';
   foreach(array('id'=>'Client ID','secret'=>'Client Secret') as $key=>$label)echo '<tr><th>'.esc_html($label).'</th><td><input type="password" autocomplete="new-password" name="client_'.esc_attr($key).'" value=""><span> '.(self::credential($key)?'已配置，留空保留':'尚未配置').'</span></td></tr>';
   echo '</table><label><input type="checkbox" name="enabled" value="1" '.checked($c['enabled'],true,false).'>启用统一询盘处理</label>';
   submit_button('保存设置');if(XI_Compatibility::legacy_active())submit_button('导入原询盘配置','secondary','import_legacy');echo '</form>';
