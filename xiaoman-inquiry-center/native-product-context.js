@@ -74,7 +74,11 @@
       (category.products || []).forEach(function (p) { option(model, p.id, p.model, String(p.id) === selectedId); });
       if (form.hasAttribute('data-xi-product-page')) {
         var equipmentGroup = equipment.closest('.form-group');
-        if (equipmentGroup) equipmentGroup.hidden = true;
+        if (equipmentGroup) {
+          equipmentGroup.hidden = true;
+          // Bricks' author CSS can override the browser's default [hidden] rule.
+          if (equipmentGroup.style.display !== 'none') equipmentGroup.style.display = 'none';
+        }
       }
       setValue(form, 'CategoryID', category.id);
       setValue(form, 'CategorySignature', category.signature);
