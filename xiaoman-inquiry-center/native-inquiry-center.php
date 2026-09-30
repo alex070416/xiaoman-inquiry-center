@@ -2,7 +2,7 @@
 /** Native Bricks inbox. Own storage and a separate native CRM queue. */
 if (!defined('ABSPATH')) return;
 final class XI_Native_Inquiry_Center {
- const META = 'xi_native_record';
+ const META = XI_RECORD_META;
  const PAGE = 'xiaoman-inquiry-center';
  const CAP = XI_VIEW_CAP;
  const ROLE = XI_VIEW_ROLE;

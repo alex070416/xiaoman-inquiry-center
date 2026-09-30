@@ -56,4 +56,17 @@ update_option(XI_Config::OPTION,$config);
 verify_migration('credentials_readable',XI_Config::credential('id')==='fixture-client'&&XI_Config::credential('secret')==='fixture-secret');
 define('XI_API',$config['api']);require dirname(__DIR__).'/xiaoman-inquiry-center/provider.php';
 verify_migration('provider_separate_lead_name',XI_Xiaoman_Queue_V1::product_mapping('self loading stacker')===array('lead_name'=>'自提车','product_name'=>'堆高车'));
+
+// Execute the actual record reader with the imported legacy metadata key.
+define('XI_RECORD_META',$config['record_meta']);define('XI_VIEW_CAP','xiaoman_inquiry_view');define('XI_VIEW_ROLE','xiaoman_inquiry_viewer');define('XI_PROFILE',$config);
+function add_action(...$args){}function absint($id){return abs((int)$id);}
+class XI_Request_Attribution_V1 {static function repair_legacy($v){return $v;}}
+class XI_Inquiry_Source_V1 {static function label($v){return 'Fixture source';}}
+require dirname(__DIR__).'/xiaoman-inquiry-center/native-inquiry-center.php';
+$record=array('schema'=>1,'uuid'=>'historical-fixture','kind'=>'detail','hd'=>array(),'source'=>'Fixture source','sync_requested'=>true,'submitted_at'=>'2026-09-01 00:00:00');
+$row=array('form_data'=>json_encode(array($config['record_meta']=>array('value'=>json_encode($record)))));
+verify_migration('runtime_imported_meta',XI_Native_Inquiry_Center::META===$config['record_meta']);
+verify_migration('historical_record_reader',XI_Native_Inquiry_Center::record($row)===$record);
+verify_migration('historical_number',XI_Native_Inquiry_Center::number(123)===$number.'123');
+verify_migration('unrelated_record_ignored',XI_Native_Inquiry_Center::record(array('form_data'=>'{}'))===array());
 echo json_encode(array('php'=>PHP_VERSION,'fixture'=>$site,'passed'=>$n))."\n";
