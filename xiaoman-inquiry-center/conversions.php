@@ -43,11 +43,26 @@ final class XI_Conversions {
   ) $charset;");
   return $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s',$wpdb->esc_like($t)))===$t;
  }
- static function safe_path($v){return is_string($v)&&preg_match('#^/(?:[a-zA-Z0-9_-]+/)?thank-you/$#D',$v)?$v:'';}
+ static function safe_path($v){return is_string($v)&&preg_match('#^/(?:[a-zA-Z0-9_-]{1,64}/){1,4}$#D',$v)?$v:'';}
  static function thank_you($r){
   $c=self::config();$path=(string)wp_parse_url($r['hd']['H1']??'',PHP_URL_PATH);$paths=(array)$c['thank_you_paths'];
   foreach($paths as $lang=>$target)if($lang!=='default'&&preg_match('/^[a-zA-Z0-9_-]+$/D',$lang)&&strpos($path,'/'.$lang.'/')===0&&self::safe_path($target))return home_url($target);
-  return self::safe_path($paths['default']??'')?home_url($paths['default']):XI_Native_Inquiry_Center::thank_you_url($r);
+  $native=XI_Native_Inquiry_Center::thank_you_url($r);
+  return $native===home_url('/thank-you/')&&self::safe_path($paths['default']??'')?home_url($paths['default']):$native;
+ }
+ static function thank_you_routes(){
+  $urls=array(self::thank_you(array()));
+  foreach((array)self::config()['thank_you_paths'] as $target)if(self::safe_path($target))$urls[]=home_url($target);
+  if(class_exists('TRP_Translate_Press'))try{
+   $trp=TRP_Translate_Press::get_trp_instance();$settings=$trp->get_component('settings')->get_settings();$converter=$trp->get_component('url_converter');
+   foreach((array)($settings['publish-languages']??array()) as $lang){$source=$converter->get_url_for_language($lang,home_url('/'),'');$urls[]=self::thank_you(array('hd'=>array('H1'=>$source)));}
+  }catch(Throwable $e){/* Explicit configured paths remain available if translation lookup fails. */}
+  $out=array();$host=wp_parse_url(home_url(),PHP_URL_HOST);
+  foreach($urls as $url){$path=(string)wp_parse_url($url,PHP_URL_PATH);if(wp_parse_url($url,PHP_URL_HOST)===$host&&self::safe_path($path))$out[]=$path;}
+  return array_values(array_unique($out));
+ }
+ static function is_thank_you_path($path){
+  return is_string($path)&&in_array(rtrim($path,'/').'/',self::thank_you_routes(),true);
  }
  static function states($v){$out=array();foreach(array('analytics_storage','ad_storage','ad_user_data','ad_personalization') as $k)$out[$k]=($v[$k]??'denied')==='granted'?'granted':'denied';return $out;}
  static function service_ready($name,$purpose){
@@ -114,13 +129,13 @@ final class XI_Conversions {
   $out=self::claim($token,$number,$channel,(array)($p['consent']??array()));if(is_wp_error($out))wp_send_json_error(array('code'=>$out->get_error_code()),$out->get_error_code()==='receipt'?410:400);wp_send_json_success($out);
  }
  static function assets(){
-  if(self::$enqueued||!self::active()||is_admin())return;self::$enqueued=true;$c=self::config();$pub=array_intersect_key($c,array_flip(array('site_host','ga4_id','ads_id','ads_label','whatsapp_label','email_label','analytics_service','ads_service','user_data_service')));$pub['endpoint']=admin_url('admin-ajax.php?action=xi_conversion');$pub['number_prefix']=XI_PROFILE['number_prefix'];
+  if(self::$enqueued||!self::active()||is_admin())return;self::$enqueued=true;$c=self::config();$pub=array_intersect_key($c,array_flip(array('site_host','ga4_id','ads_id','ads_label','whatsapp_label','email_label','analytics_service','ads_service','user_data_service')));$pub['endpoint']=admin_url('admin-ajax.php?action=xi_conversion');$pub['number_prefix']=XI_PROFILE['number_prefix'];$pub['thank_you_routes']=self::thank_you_routes();
   foreach(array('analytics_service'=>'analytics_storage','ads_service'=>'ad_storage','user_data_service'=>'ad_user_data') as $key=>$purpose)if(!self::service_ready($c[$key],$purpose))$pub[$key]='';
   wp_enqueue_script('xi-conversions',plugins_url('conversions.js',XI_FILE),array(),XI_VERSION,false);wp_add_inline_script('xi-conversions','window.XIConversionConfig='.wp_json_encode($pub).';','before');
  }
  static function early_assets(){self::assets();if(self::$enqueued)wp_print_scripts('xi-conversions');}
  static function privacy_headers(){
-  if(!self::active()||!preg_match('#^/(?:[a-zA-Z0-9_-]+/)?thank-you/?$#D',(string)wp_parse_url($_SERVER['REQUEST_URI']??'',PHP_URL_PATH)))return;
+  if(!self::active()||!self::is_thank_you_path((string)wp_parse_url($_SERVER['REQUEST_URI']??'',PHP_URL_PATH)))return;
   if(!defined('DONOTCACHEPAGE'))define('DONOTCACHEPAGE',true);nocache_headers();header('Cache-Control: no-store, private');header('Referrer-Policy: same-origin');header('X-Robots-Tag: noindex, nofollow');
  }
  static function inline_attributes($attrs){if(($attrs['id']??'')==='xi-conversions-js-before')$attrs=array_merge($attrs,array('data-no-optimize'=>'1','data-no-defer'=>'1','data-cfasync'=>'false'));return $attrs;}

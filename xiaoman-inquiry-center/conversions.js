@@ -7,7 +7,7 @@
  function start(w){
   if(!w||!w.XIConversionConfig)return;var c=w.XIConversionConfig;if(w.location.hostname!==c.site_host||/[?&](bricks|brickspreview)=/.test(w.location.search))return;
   var d=w.document,p=new URLSearchParams(w.location.search),number=p.get('inquiry_id')||'',ticket=p.get('xi_receipt')||'',busy={},done={},closed=false;
-  var thank=/^\/(?:[a-zA-Z0-9_-]+\/)?thank-you\/?$/.test(w.location.pathname)&&p.get('form')==='quick_quote';
+  var thank=Array.isArray(c.thank_you_routes)&&c.thank_you_routes.indexOf(w.location.pathname.replace(/\/+$/,'')+'/')!==-1&&p.get('form')==='quick_quote';
   // Strip the bearer token before base tags/pageviews read the URL. Never persist it in browser storage.
   if(p.has('xi_receipt')){p.delete('xi_receipt');w.history.replaceState(w.history.state,'',w.location.pathname+(p.toString()?'?'+p:'')+w.location.hash);}
   w.XIConversions={consents:function(){return consent(w,c);}};
