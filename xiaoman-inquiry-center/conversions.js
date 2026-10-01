@@ -10,6 +10,9 @@
   var thank=Array.isArray(c.thank_you_routes)&&c.thank_you_routes.indexOf(w.location.pathname.replace(/\/+$/,'')+'/')!==-1&&p.get('form')==='quick_quote';
   // Strip the bearer token before base tags/pageviews read the URL. Never persist it in browser storage.
   if(p.has('xi_receipt')){p.delete('xi_receipt');w.history.replaceState(w.history.state,'',w.location.pathname+(p.toString()?'?'+p:'')+w.location.hash);}
+  function scrubLink(a){try{var u=new URL(a.href,w.location.href);if(u.searchParams.has('xi_receipt')){u.searchParams.delete('xi_receipt');a.href=u.href;}}catch(_){} }
+  function scrubLinks(){d.querySelectorAll('a[href*="xi_receipt="]').forEach(scrubLink);}
+  scrubLinks();d.addEventListener('DOMContentLoaded',scrubLinks);
   w.XIConversions={consents:function(){return consent(w,c);}};
   function request(data){return w.fetch(c.endpoint,{method:'POST',credentials:'same-origin',cache:'no-store',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}).then(function(r){return r.json();});}
   function ack(channel){request({op:'ack',receipt:ticket,inquiry_id:number,channel:channel}).catch(function(){});}
@@ -25,7 +28,7 @@
    busy[channel]=true;request({op:'claim',receipt:ticket,inquiry_id:number,channel:channel,consent:state}).then(function(result){if(result.success&&result.data){done[channel]=true;if(result.data.dispatch)transmit(channel,result.data);}else if(result.data&&result.data.code==='receipt')done[channel]=true;}).catch(function(){}).finally(function(){busy[channel]=false;});
   }
   function reconcile(){dispatch('ga4');dispatch('ads');if(done.ga4&&done.ads&&timer){w.clearInterval(timer);timer=null;}}
-  d.addEventListener('click',function(e){var a=e.target&&e.target.closest&&e.target.closest('a[href]');if(!a)return;var name=contact(a.href);if(!name||typeof w.gtag!=='function')return;var state=consent(w,c);if(state.analytics_storage==='granted'&&/^G-[A-Z0-9]+$/.test(c.ga4_id))w.gtag('event',name,{send_to:c.ga4_id,contact_type:name==='email_click'?'email':'whatsapp'});var label=name==='email_click'?c.email_label:c.whatsapp_label;if(state.ad_storage==='granted'&&/^AW-[0-9]+$/.test(c.ads_id)&&/^[A-Za-z0-9_-]+$/.test(label||''))w.gtag('event','conversion',{send_to:c.ads_id+'/'+label});},true);
+  d.addEventListener('click',function(e){var a=e.target&&e.target.closest&&e.target.closest('a[href]');if(!a)return;scrubLink(a);var name=contact(a.href);if(!name||typeof w.gtag!=='function')return;var state=consent(w,c);if(state.analytics_storage==='granted'&&/^G-[A-Z0-9]+$/.test(c.ga4_id))w.gtag('event',name,{send_to:c.ga4_id,contact_type:name==='email_click'?'email':'whatsapp'});var label=name==='email_click'?c.email_label:c.whatsapp_label;if(state.ad_storage==='granted'&&/^AW-[0-9]+$/.test(c.ads_id)&&/^[A-Za-z0-9_-]+$/.test(label||''))w.gtag('event','conversion',{send_to:c.ads_id+'/'+label});},true);
   w.addEventListener('pagehide',function(){closed=true;});w.addEventListener('pageshow',function(){closed=false;reconcile();});d.addEventListener('DOMContentLoaded',reconcile);d.addEventListener('rcb-consent-changed',reconcile);reconcile();
   var timer=thank&&ticket?w.setInterval(reconcile,1000):null;if(timer)w.setTimeout(function(){w.clearInterval(timer);closed=true;ticket='';},30*60000);
  }

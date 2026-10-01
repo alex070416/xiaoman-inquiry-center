@@ -14,6 +14,7 @@ final class XI_Conversions {
   add_action('wp_head',array(__CLASS__,'early_assets'),-100);
   add_action('template_redirect',array(__CLASS__,'privacy_headers'),0);
   add_filter('script_loader_tag',array(__CLASS__,'script_tag'),10,2);add_filter('wp_inline_script_attributes',array(__CLASS__,'inline_attributes'));
+  foreach(array('litespeed_optimize_js_excludes','litespeed_optm_js_defer_exc','litespeed_optm_gm_js_exc') as $filter)add_filter($filter,array(__CLASS__,'optimizer_exclusions'));
   foreach(array('wp_ajax_xi_conversion','wp_ajax_nopriv_xi_conversion') as $tag)add_action($tag,array(__CLASS__,'ajax'));
   add_action('admin_menu',array(__CLASS__,'menu'),46);add_action('admin_post_xi_conversion_save',array(__CLASS__,'save_config'));
  }
@@ -44,15 +45,21 @@ final class XI_Conversions {
   return $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s',$wpdb->esc_like($t)))===$t;
  }
  static function safe_path($v){return is_string($v)&&preg_match('#^/(?:[a-zA-Z0-9_-]{1,64}/){1,4}$#D',$v)?$v:'';}
+ static function optimizer_exclusions($items){return self::active()?array_values(array_unique(array_merge((array)$items,array('xiaoman-inquiry-center/conversions.js','XIConversionConfig')))):$items;}
+ static function absolute_path($path){
+  // TranslatePress filters home_url during language AJAX requests. Configured paths already contain their language prefix.
+  $base=untrailingslashit((string)get_option('home'));
+  return self::safe_path($path)&&wp_parse_url($base,PHP_URL_HOST)===XI_HOST?$base.$path:'';
+ }
  static function thank_you($r){
   $c=self::config();$path=(string)wp_parse_url($r['hd']['H1']??'',PHP_URL_PATH);$paths=(array)$c['thank_you_paths'];
-  foreach($paths as $lang=>$target)if($lang!=='default'&&preg_match('/^[a-zA-Z0-9_-]+$/D',$lang)&&strpos($path,'/'.$lang.'/')===0&&self::safe_path($target))return home_url($target);
+  foreach($paths as $lang=>$target)if($lang!=='default'&&preg_match('/^[a-zA-Z0-9_-]+$/D',$lang)&&strpos($path,'/'.$lang.'/')===0&&self::absolute_path($target))return self::absolute_path($target);
   $native=XI_Native_Inquiry_Center::thank_you_url($r);
-  return $native===home_url('/thank-you/')&&self::safe_path($paths['default']??'')?home_url($paths['default']):$native;
+  return $native===home_url('/thank-you/')&&self::absolute_path($paths['default']??'')?self::absolute_path($paths['default']):$native;
  }
  static function thank_you_routes(){
   $urls=array(self::thank_you(array()));
-  foreach((array)self::config()['thank_you_paths'] as $target)if(self::safe_path($target))$urls[]=home_url($target);
+  foreach((array)self::config()['thank_you_paths'] as $target)if(self::absolute_path($target))$urls[]=self::absolute_path($target);
   if(class_exists('TRP_Translate_Press'))try{
    $trp=TRP_Translate_Press::get_trp_instance();$settings=$trp->get_component('settings')->get_settings();$converter=$trp->get_component('url_converter');
    foreach((array)($settings['publish-languages']??array()) as $lang){$source=$converter->get_url_for_language($lang,home_url('/'),'');$urls[]=self::thank_you(array('hd'=>array('H1'=>$source)));}
