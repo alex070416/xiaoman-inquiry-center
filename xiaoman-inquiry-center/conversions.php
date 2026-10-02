@@ -1,10 +1,14 @@
 <?php
 if (!defined('ABSPATH')) exit;
-/** Claims guarantee at most one browser dispatch per saved inquiry/channel, not Google delivery. */
+/** Honest clients release only definitely-unused owners; unknown outcomes never replay. This does not prove Google delivery or defend against dishonest release claims. */
 final class XI_Conversions {
  const OPTION='xi_conversion_config_v1';
+ const SCHEMA_OPTION='xi_conversion_receipt_schema_v1';
+ const PROTOCOL='owned-v1';
+ const MIGRATION_STATUS='xi_conversion_receipt_migration_v1';
  static $tickets=array();
  static $enqueued=false;
+ static $owner_schema=null;
  static function defaults(){return array('enabled'=>false,'site_host'=>'','cutover_id'=>0,'gtm_id'=>'','ga4_id'=>'','ads_id'=>'','ads_label'=>'','whatsapp_label'=>'','email_label'=>'','analytics_service'=>'','ads_service'=>'','user_data_service'=>'','enhanced'=>false,'thank_you_paths'=>array());}
  static function config(){return wp_parse_args((array)get_option(self::OPTION,array()),self::defaults());}
  static function active(){$c=self::config();return $c['enabled'] && $c['site_host']===XI_HOST;}
@@ -16,7 +20,36 @@ final class XI_Conversions {
   add_filter('script_loader_tag',array(__CLASS__,'script_tag'),10,2);add_filter('wp_inline_script_attributes',array(__CLASS__,'inline_attributes'));
   foreach(array('litespeed_optimize_js_excludes','litespeed_optm_js_defer_exc','litespeed_optm_gm_js_exc') as $filter)add_filter($filter,array(__CLASS__,'optimizer_exclusions'));
   foreach(array('wp_ajax_xi_conversion','wp_ajax_nopriv_xi_conversion') as $tag)add_action($tag,array(__CLASS__,'ajax'));
+  foreach(array('wp_ajax_xi_conversion_owned','wp_ajax_nopriv_xi_conversion_owned') as $tag)add_action($tag,array(__CLASS__,'ajax'));
   add_action('admin_menu',array(__CLASS__,'menu'),46);add_action('admin_post_xi_conversion_save',array(__CLASS__,'save_config'));
+  // Plugin updates do not run the activation hook. Migrate enabled sites before frontend/AJAX handling.
+  add_action('init',array(__CLASS__,'maybe_upgrade'),0);
+  add_action('admin_notices',array(__CLASS__,'migration_notice'));
+ }
+ static function schema_ready(){
+  if(self::$owner_schema!==null)return self::$owner_schema;global $wpdb;
+  $columns=$wpdb->get_col('SHOW COLUMNS FROM '.self::table());
+  return self::$owner_schema=is_array($columns)&&!array_diff(array('ga4_claim_owner','ads_claim_owner'),$columns);
+ }
+ static function maybe_upgrade(){
+  if(!self::active())return;
+  if(get_option(self::SCHEMA_OPTION,'')===self::PROTOCOL&&self::schema_ready())return;
+  $status=(array)get_option(self::MIGRATION_STATUS,array());
+  if(($status['retry_at']??0)>time()){self::$owner_schema=false;return;}
+  global $wpdb;$lock='xi_receipt_'.substr(hash('sha256',self::table()),0,40);
+  $acquired=(string)$wpdb->get_var($wpdb->prepare('SELECT GET_LOCK(%s, 0)',$lock));
+  if($acquired!=='1'){self::$owner_schema=false;if($acquired!=='0')update_option(self::MIGRATION_STATUS,array('failed_at'=>gmdate('c'),'retry_at'=>time()+300),false);return;}
+  try{
+   self::$owner_schema=null;
+   // A competing request may already have completed the migration while this request waited.
+   if(self::schema_ready()||self::setup()){update_option(self::SCHEMA_OPTION,self::PROTOCOL,false);delete_option(self::MIGRATION_STATUS);}
+   else{self::$owner_schema=false;update_option(self::MIGRATION_STATUS,array('failed_at'=>gmdate('c'),'retry_at'=>time()+300),false);}
+  }catch(Throwable $e){self::$owner_schema=false;update_option(self::MIGRATION_STATUS,array('failed_at'=>gmdate('c'),'retry_at'=>time()+300),false);}
+  finally{$wpdb->get_var($wpdb->prepare('SELECT RELEASE_LOCK(%s)',$lock));}
+ }
+ static function migration_notice(){
+  if(!self::active()||!current_user_can('manage_options')||!get_option(self::MIGRATION_STATUS))return;
+  echo '<div class="notice notice-warning"><p>询盘转化存储升级未完成，当前保留旧版追踪；系统最多每 5 分钟重试一次。请检查数据库权限。历史发送状态不会被重置。</p></div>';
  }
  static function setup(){
   global $wpdb;require_once ABSPATH.'wp-admin/includes/upgrade.php';$t=self::table();$charset=$wpdb->get_charset_collate();
@@ -33,8 +66,10 @@ final class XI_Conversions {
    consent_at_submit text NOT NULL,
    ga4_state varchar(16) NOT NULL DEFAULT 'pending',
    ads_state varchar(16) NOT NULL DEFAULT 'pending',
-   ga4_claimed_utc datetime DEFAULT NULL,
-   ads_claimed_utc datetime DEFAULT NULL,
+    ga4_claimed_utc datetime DEFAULT NULL,
+    ads_claimed_utc datetime DEFAULT NULL,
+    ga4_claim_owner char(32) DEFAULT NULL,
+    ads_claim_owner char(32) DEFAULT NULL,
    ga4_callback_utc datetime DEFAULT NULL,
    ads_callback_utc datetime DEFAULT NULL,
    PRIMARY KEY  (id),
@@ -42,10 +77,11 @@ final class XI_Conversions {
    UNIQUE KEY token_hash (token_hash),
    KEY created_utc (created_utc)
   ) $charset;");
-  return $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s',$wpdb->esc_like($t)))===$t;
+  self::$owner_schema=null;
+  return $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s',$wpdb->esc_like($t)))===$t&&self::schema_ready();
  }
  static function safe_path($v){return is_string($v)&&preg_match('#^/(?:[a-zA-Z0-9_-]{1,64}/){1,4}$#D',$v)?$v:'';}
- static function optimizer_exclusions($items){return self::active()?array_values(array_unique(array_merge((array)$items,array('xiaoman-inquiry-center/conversions.js','XIConversionConfig')))):$items;}
+ static function optimizer_exclusions($items){return self::active()?array_values(array_unique(array_merge((array)$items,array('xiaoman-inquiry-center/conversions.js','xiaoman-inquiry-center/conversions.legacy.js','XIConversionConfig')))):$items;}
  static function absolute_path($path){
   // TranslatePress filters home_url during language AJAX requests. Configured paths already contain their language prefix.
   $base=untrailingslashit((string)get_option('home'));
@@ -110,35 +146,59 @@ final class XI_Conversions {
   $saved=XI_Native_Inquiry_Center::row($row['submission_id']);$r=XI_Native_Inquiry_Center::record($saved);
   return $saved&&hash_equals($row['request_uuid'],(string)($r['uuid']??''))?$row:null;
  }
- static function claim($token,$number,$channel,$consent){
+ static function claim($token,$number,$channel,$consent,$protocol=''){
+  if($protocol!==''&&($protocol!==self::PROTOCOL||!self::schema_ready()))return new WP_Error('protocol','Owned receipt protocol is unavailable');
   if(!in_array($channel,array('ga4','ads'),true))return new WP_Error('channel','Invalid channel');$row=self::receipt($token,$number);if(!$row)return new WP_Error('receipt','Invalid or expired receipt');
   $c=self::config();$purpose=$channel==='ga4'?'analytics_storage':'ad_storage';$service=$channel==='ga4'?$c['analytics_service']:$c['ads_service'];$consent=self::states($consent);if($consent[$purpose]!=='granted'||!self::service_ready($service,$purpose))return new WP_Error('consent','Consent not granted or service not declared');
   $dest=$channel==='ga4'?$c['ga4_id']:$c['ads_id'].'/'.$c['ads_label'];
   if(($channel==='ga4'&&!preg_match('/^G-[A-Z0-9]+$/D',$dest))||($channel==='ads'&&!preg_match('#^AW-[0-9]+/[A-Za-z0-9_-]+$#D',$dest)))return new WP_Error('config','Destination missing');
-  global $wpdb;$state=$channel.'_state';$at=$channel.'_claimed_utc';$changed=$wpdb->query($wpdb->prepare('UPDATE '.self::table()." SET $state='claimed', $at=%s WHERE id=%d AND $state='pending'",gmdate('Y-m-d H:i:s'),$row['id']));
+   global $wpdb;$state=$channel.'_state';$at=$channel.'_claimed_utc';$owner_column=$channel.'_claim_owner';$owner=$protocol===self::PROTOCOL?bin2hex(random_bytes(16)):'';
+   if($owner!=='')$changed=$wpdb->query($wpdb->prepare('UPDATE '.self::table()." SET $state='claimed', $at=%s, $owner_column=%s WHERE id=%d AND $state='pending'",gmdate('Y-m-d H:i:s'),$owner,$row['id']));
+   else $changed=$wpdb->query($wpdb->prepare('UPDATE '.self::table()." SET $state='claimed', $at=%s WHERE id=%d AND $state='pending'",gmdate('Y-m-d H:i:s'),$row['id']));
   if($changed===false)return new WP_Error('storage','Claim failed');if($changed!==1)return array('dispatch'=>false,'reason'=>'already_claimed');
-  $out=array('dispatch'=>true,'channel'=>$channel,'send_to'=>$dest,'inquiry_id'=>$number,'form_type'=>$row['form_kind'],'is_test'=>(int)$row['is_test']);$submitted=self::states(json_decode($row['consent_at_submit'],true)??array());
+   $out=array('dispatch'=>true,'channel'=>$channel,'send_to'=>$dest,'inquiry_id'=>$number,'form_type'=>$row['form_kind'],'is_test'=>(int)$row['is_test']);if($owner!=='')$out['claim_owner']=$owner;$submitted=self::states(json_decode($row['consent_at_submit'],true)??array());
   if($channel==='ads'&&$c['enhanced']&&self::service_ready($c['user_data_service'],'ad_user_data')&&$consent['ad_user_data']==='granted'&&$submitted['ad_user_data']==='granted'){
    $r=XI_Native_Inquiry_Center::record(XI_Native_Inquiry_Center::row($row['submission_id']));$v=$r['values']??array();$email=self::email_hash($v['F5']??'');$phone=self::phone_hash($v['F6']??'');
    if($email){$out['user_data']=array('sha256_email_address'=>$email);if($phone)$out['user_data']['sha256_phone_number']=$phone;}
   }return $out;
  }
- static function acknowledge($token,$number,$channel){
+  // Only the browser owner that has not called the Google event may request this.
+  // No lease expiry and no automatic reset: an unknown attempted send stays claimed.
+  static function release_unsent($token,$number,$channel,$owner){
+   if(!self::schema_ready()||!in_array($channel,array('ga4','ads'),true)||!is_string($owner)||!preg_match('/^[a-f0-9]{32}$/D',$owner)||!($row=self::receipt($token,$number)))return false;
+   global $wpdb;$state=$channel.'_state';$at=$channel.'_claimed_utc';$owner_column=$channel.'_claim_owner';
+   $changed=$wpdb->query($wpdb->prepare('UPDATE '.self::table()." SET $state='pending', $at=NULL, $owner_column=NULL WHERE id=%d AND $state='claimed' AND $owner_column=%s",$row['id'],$owner));
+   if($changed===1)return true;
+   // Release acknowledgements can be lost. Repeating the same unused release is safe.
+   $current=$wpdb->get_row($wpdb->prepare('SELECT '. $state .' AS state, '. $owner_column .' AS owner FROM '.self::table().' WHERE id=%d',$row['id']),ARRAY_A);
+   return $current&&$current['state']==='pending'&&empty($current['owner']);
+  }
+  static function acknowledge($token,$number,$channel,$owner=''){
   if(!in_array($channel,array('ga4','ads'),true)||!($row=self::receipt($token,$number)))return false;global $wpdb;$state=$channel.'_state';$at=$channel.'_callback_utc';
-  return $wpdb->query($wpdb->prepare('UPDATE '.self::table()." SET $state='callback', $at=%s WHERE id=%d AND $state='claimed'",gmdate('Y-m-d H:i:s'),$row['id']))!==false;
+   $owner_column=$channel.'_claim_owner';$owned=!empty($row[$owner_column]);
+   if($owned&&!hash_equals($row[$owner_column],(string)$owner))return false;
+   // Keep owner matching in the UPDATE too: a stale ack must not acknowledge a later claim.
+   $where=$owned?$wpdb->prepare(" AND $owner_column=%s",$owner):(self::schema_ready()?" AND ($owner_column IS NULL OR $owner_column='')":'');
+   $changed=$wpdb->query($wpdb->prepare('UPDATE '.self::table()." SET $state='callback', $at=%s WHERE id=%d AND $state='claimed'",gmdate('Y-m-d H:i:s'),$row['id']).$where);
+   return $changed===1||($changed===0&&$row[$state]==='callback');
  }
  static function ajax(){
   nocache_headers();header('Cache-Control: no-store, private');header('X-Robots-Tag: noindex');$origin=$_SERVER['HTTP_ORIGIN']??'';$h=wp_parse_url(home_url());$expected=$h['scheme'].'://'.$h['host'].(isset($h['port'])?':'.$h['port']:'');
   if(strtoupper($_SERVER['REQUEST_METHOD']??'')!=='POST'||($origin!==''&&$origin!==$expected))wp_send_json_error(array('code'=>'origin'),403);
   $raw=file_get_contents('php://input',false,null,0,4097);$p=strlen($raw)<=4096?json_decode($raw,true):null;if(!is_array($p))wp_send_json_error(array('code'=>'request'),400);
   $token=$p['receipt']??'';$number=$p['inquiry_id']??'';$channel=$p['channel']??'';
-  if(($p['op']??'claim')==='ack')wp_send_json_success(array('ack'=>self::acknowledge($token,$number,$channel)));
-  $out=self::claim($token,$number,$channel,(array)($p['consent']??array()));if(is_wp_error($out))wp_send_json_error(array('code'=>$out->get_error_code()),$out->get_error_code()==='receipt'?410:400);wp_send_json_success($out);
+   if(($p['op']??'claim')==='release_unsent')wp_send_json_success(array('released'=>self::release_unsent($token,$number,$channel,$p['claim_owner']??'')));
+   if(($p['op']??'claim')==='ack')wp_send_json_success(array('ack'=>self::acknowledge($token,$number,$channel,$p['claim_owner']??'')));
+  if(($p['op']??'claim')!=='claim')wp_send_json_error(array('code'=>'operation'),400);
+  if(($_REQUEST['action']??'')==='xi_conversion_owned'&&($p['protocol']??'')!==self::PROTOCOL)wp_send_json_error(array('code'=>'protocol'),400);
+  $out=self::claim($token,$number,$channel,(array)($p['consent']??array()),$p['protocol']??'');if(is_wp_error($out))wp_send_json_error(array('code'=>$out->get_error_code()),$out->get_error_code()==='receipt'?410:400);wp_send_json_success($out);
  }
  static function assets(){
   if(self::$enqueued||!self::active()||is_admin())return;self::$enqueued=true;$c=self::config();$pub=array_intersect_key($c,array_flip(array('site_host','ga4_id','ads_id','ads_label','whatsapp_label','email_label','analytics_service','ads_service','user_data_service')));$pub['endpoint']=admin_url('admin-ajax.php?action=xi_conversion');$pub['number_prefix']=XI_PROFILE['number_prefix'];$pub['thank_you_routes']=self::thank_you_routes();
   foreach(array('analytics_service'=>'analytics_storage','ads_service'=>'ad_storage','user_data_service'=>'ad_user_data') as $key=>$purpose)if(!self::service_ready($c[$key],$purpose))$pub[$key]='';
-  wp_enqueue_script('xi-conversions',plugins_url('conversions.js',XI_FILE),array(),XI_VERSION,false);wp_add_inline_script('xi-conversions','window.XIConversionConfig='.wp_json_encode($pub).';','before');
+  $owned=self::schema_ready();$pub['receipt_protocol']=$owned?self::PROTOCOL:'';$pub['owned_endpoint']=$owned?admin_url('admin-ajax.php?action=xi_conversion_owned'):'';
+  // A failed migration keeps the beta.7 tracking path instead of silently disabling all form events.
+  wp_enqueue_script('xi-conversions',plugins_url($owned?'conversions.js':'conversions.legacy.js',XI_FILE),array(),XI_VERSION,false);wp_add_inline_script('xi-conversions','window.XIConversionConfig='.wp_json_encode($pub).';','before');
  }
  static function early_assets(){self::assets();if(self::$enqueued)wp_print_scripts('xi-conversions');}
  static function privacy_headers(){
