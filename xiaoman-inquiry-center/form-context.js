@@ -217,7 +217,8 @@
       }
       diagnostic.status = values.A1 ? 'campaign_captured' : (values.A5 ? 'click_without_campaign' : 'no_campaign_parameter');
       Object.keys(values).forEach(function(k) { set(form,k,values[k]); });
-      writePacket(form,Object.assign({H1:url(w.location.href), _tracking:diagnostic, _source:source, _request:request},values));
+      var measurement=w.XIConversions&&typeof w.XIConversions.consents==='function'?w.XIConversions.consents():{};
+      writePacket(form,Object.assign({H1:url(w.location.href), _tracking:diagnostic, _source:source, _request:request, _measurement:measurement},values));
     }
     function fillAll() { d.querySelectorAll(FORM).forEach(function(f) { fill(f); }); }
     function click(e) {
