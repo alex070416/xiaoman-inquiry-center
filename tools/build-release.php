@@ -6,10 +6,14 @@ $repo=dirname(__DIR__);$root=$repo.'/xiaoman-inquiry-center';
 $seedPath=$argv[1]??'';if(!$seedPath)throw new RuntimeException('Usage: php tools/build-release.php /private/path/release.seed [output directory]');
 $parent=realpath(dirname($seedPath));$repoReal=realpath($repo);
 if(!$parent||stripos(str_replace('\\','/',$parent).'/',str_replace('\\','/',$repoReal).'/')===0)throw new RuntimeException('Signing seed must be outside the repository.');
-if(!file_exists($seedPath)){file_put_contents($seedPath,random_bytes(SODIUM_CRYPTO_SIGN_SEEDBYTES),LOCK_EX);chmod($seedPath,0600);}
+if(!is_file($seedPath))throw new RuntimeException('An existing signing seed is required; this tool does not initialize signing identities.');
 $seed=file_get_contents($seedPath);if(strlen($seed)!==SODIUM_CRYPTO_SIGN_SEEDBYTES)throw new RuntimeException('Invalid signing seed length.');
-$pair=sodium_crypto_sign_seed_keypair($seed);$public=sodium_crypto_sign_publickey($pair);$secret=sodium_crypto_sign_secretkey($pair);
-file_put_contents($root.'/release-public-key.txt',base64_encode($public)."\n");
+$pair=sodium_crypto_sign_seed_keypair($seed);$public=sodium_crypto_sign_publickey($pair);
+$existingPublic=base64_decode(trim((string)@file_get_contents($root.'/release-public-key.txt')),true);
+if(!is_string($existingPublic)||strlen($existingPublic)!==SODIUM_CRYPTO_SIGN_PUBLICKEYBYTES||!hash_equals($existingPublic,$public)){
+ sodium_memzero($pair);sodium_memzero($seed);throw new RuntimeException('Existing release public key is missing or does not match the signing identity; no key is overwritten.');
+}
+$secret=sodium_crypto_sign_secretkey($pair);sodium_memzero($pair);
 $source=file_get_contents($root.'/xiaoman-inquiry-center.php');if(!preg_match('/ \* Version: ([^\r\n]+)/',$source,$match))throw new RuntimeException('Version header missing.');$version=trim($match[1]);
 $output=$argv[2]??$repo.'/dist';if(!is_dir($output))mkdir($output,0700,true);
 $asset='xiaoman-inquiry-center-'.$version.'.zip';$zipPath=$output.'/'.$asset;

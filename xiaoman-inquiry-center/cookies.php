@@ -3,7 +3,7 @@ if(!defined('ABSPATH'))exit;
 final class XI_Cookies {
  static function boot(){add_action('admin_post_xi_cookie_prepare',array(__CLASS__,'prepare'));}
  static function definitions(){
-  $host=home_url();return array(
+  $host=(string)wp_parse_url(home_url(),PHP_URL_HOST);return array(
    array('type'=>'local','name'=>'xi_first_v1','host'=>$host,'duration'=>30,'durationUnit'=>'d'),
    array('type'=>'local','name'=>'xi_marketing_v1','host'=>$host,'duration'=>30,'durationUnit'=>'d'),
    array('type'=>'session','name'=>'xi_visit_v1','host'=>$host,'duration'=>30,'durationUnit'=>'m'),
@@ -24,7 +24,10 @@ final class XI_Cookies {
   // New consent declarations remain drafts for the site owner to review/publish.
   if(!$id)$id=wp_insert_post(array('post_type'=>'rcb-cookie','post_status'=>'draft','post_title'=>'Xiaoman inquiry attribution','post_content'=>'Stores first entry, current visit and advertising parameters after consent. Local storage expires after 30 days; visit storage expires after 30 minutes.'),true);
   if(is_wp_error($id))wp_die($id->get_error_message());
-  update_post_meta($id,'uniqueName',$service);update_post_meta($id,'technicalDefinitions',wp_slash(wp_json_encode(self::definitions())));update_post_meta($id,'deleteTechnicalDefinitionsAfterOptOut',true);
+  $existing=json_decode(get_post_meta($id,'technicalDefinitions',true),true);$merged=is_array($existing)?$existing:array();
+  // Preserve legacy and site-specific declarations during a plugin upgrade.
+  foreach(self::definitions() as $definition){$found=false;foreach($merged as &$item)if(($item['name']??'')===$definition['name']&&($item['type']??'')===$definition['type']){$item=array_merge($item,$definition);$found=true;}unset($item);if(!$found)$merged[]=$definition;}
+  update_post_meta($id,'uniqueName',$service);update_post_meta($id,'technicalDefinitions',wp_slash(wp_json_encode($merged)));update_post_meta($id,'deleteTechnicalDefinitionsAfterOptOut',true);
   wp_safe_redirect(get_edit_post_link($id,'raw'));exit;
  }
 }

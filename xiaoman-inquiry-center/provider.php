@@ -2,6 +2,7 @@
 if(!defined('ABSPATH'))exit;
 final class XI_Xiaoman_Queue_V1 {
  const API=XI_API;
+ const LEAD_DATE_OFFSET_HOURS=12;
  const TOKEN='xi_lead_token_v1';
  static function hd_labels() {
   return array('H3'=>'PC/Mobile','H1'=>'Form Url','H2'=>'IP address',
@@ -175,7 +176,9 @@ final class XI_Xiaoman_Queue_V1 {
   $country=self::country($fields['IP']??'');
   $product=self::product_mapping($fields['F1']??'');
   $campaign=self::text($fields['A1']??'',100);
-  $lead_name=wp_date('ymd',(int)$submitted_at).$config['origin_name'].$product['lead_name'].self::country_name($country).$campaign;
+  // Shift only the lead name's business date from the original submission time.
+  // Remarks, saved timestamps and retries continue to use that original time.
+  $lead_name=wp_date('ymd',(int)$submitted_at+self::LEAD_DATE_OFFSET_HOURS*HOUR_IN_SECONDS).$config['origin_name'].$product['lead_name'].self::country_name($country).$campaign;
   $contact=array('name'=>$name,'main_customer_flag'=>1,'email'=>$email);
   if($phone!=='') $contact['whatsapp']=$phone;
   $payload=array('lead_id'=>0,'name'=>$lead_name,'origin_list'=>array($config['origin_id']),

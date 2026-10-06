@@ -213,7 +213,10 @@ final class XI_Native_Inquiry_Center {
   }
   self::$requests[self::context_key($form)]=array('schema'=>1,'uuid'=>wp_generate_uuid4(),'kind'=>$kind,
    'form_name'=>$settings['submissionFormName'],'form_id'=>$form->get_id(),'post_id'=>absint($form->get_post_id()),
-   'submitted_at'=>gmdate('Y-m-d H:i:s'),'values'=>$values,'country'=>XI_Xiaoman_Queue_V1::country_english($visitor['country']),
+   'submitted_at'=>gmdate('Y-m-d H:i:s'),'submitted_timezone'=>'UTC','site_timezone'=>wp_timezone_string(),
+   'measurement_consent'=>class_exists('XI_Conversions')?XI_Conversions::states($packet['_measurement']??array()):array(),
+   'is_test'=>class_exists('XI_Conversions')&&XI_Conversions::test_record($values),
+   'values'=>$values,'country'=>XI_Xiaoman_Queue_V1::country_english($visitor['country']),
    'hd'=>$hd,'source'=>$source,'attribution'=>$attribution,'sync_requested'=>XI_PROFILE['crm'] && (in_array('xiaoman-inquiry',$settings['actions']??array(),true) || in_array('custom',$settings['actions']??array(),true)),'product'=>$product,
    'field_ids'=>array_map(static function($f){return $f['id']??'';},self::fields($settings)));
   return $errors;

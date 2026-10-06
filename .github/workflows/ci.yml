@@ -11,8 +11,14 @@ jobs:
     container: php:${{ matrix.php }}-cli
     steps:
       - uses: actions/checkout@v4
+      - run: apt-get update && apt-get install -y --no-install-recommends libsqlite3-dev libzip-dev && docker-php-ext-install pdo_sqlite zip
       - run: find xiaoman-inquiry-center tools -name '*.php' -print0 | xargs -0 -n1 php -l
       - run: php tests/updater.test.php
+      - run: php tests/build-release.test.php
+      - run: php -n tests/lead-date.test.php
+      - run: php -n tests/assets-metadata.test.php
+      - run: php tests/owner-protocol.test.php
+      - run: php tests/schema-rolling.test.php
       - run: for site in fangwei huajing anxing rongfeng tongqu; do php tests/compatibility.test.php "$site" || exit 1; done
   frontend:
     runs-on: ubuntu-latest
