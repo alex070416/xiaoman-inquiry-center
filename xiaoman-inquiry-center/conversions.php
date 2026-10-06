@@ -49,7 +49,7 @@ final class XI_Conversions {
  }
  static function migration_notice(){
   if(!self::active()||!current_user_can('manage_options')||!get_option(self::MIGRATION_STATUS))return;
-  echo '<div class="notice notice-warning"><p>ѯ��ת���洢����δ��ɣ���ǰ�����ɰ�׷�٣�ϵͳ���ÿ 5 ��������һ�Ρ��������ݿ�Ȩ�ޡ���ʷ����״̬���ᱻ���á�</p></div>';
+  echo '<div class="notice notice-warning"><p>询盘转化存储升级未完成，当前保留旧版追踪；系统最多每 5 分钟重试一次。请检查数据库权限。历史发送状态不会被重置。</p></div>';
  }
  static function setup(){
   global $wpdb;require_once ABSPATH.'wp-admin/includes/upgrade.php';$t=self::table();$charset=$wpdb->get_charset_collate();
@@ -216,7 +216,7 @@ final class XI_Conversions {
  }
  static function inline_attributes($attrs){if(($attrs['id']??'')==='xi-conversions-js-before')$attrs=array_merge($attrs,array('data-no-optimize'=>'1','data-no-defer'=>'1','data-cfasync'=>'false'));return $attrs;}
  static function script_tag($tag,$handle){if($handle!=='xi-conversions')return $tag;$p=new WP_HTML_Tag_Processor($tag);if($p->next_tag('SCRIPT'))foreach(array('data-no-optimize'=>'1','data-no-defer'=>'1','data-cfasync'=>'false') as $key=>$value)$p->set_attribute($key,$value);return $p->get_updated_html();}
- static function menu(){add_submenu_page(XI_Native_Inquiry_Center::PAGE,'ת�������','ת�������','manage_options','xiaoman-conversions',array(__CLASS__,'page'));}
+ static function menu(){add_submenu_page(XI_Native_Inquiry_Center::PAGE,'转化与对账','转化与对账','manage_options','xiaoman-conversions',array(__CLASS__,'page'));}
  static function save_config(){
   if(!current_user_can('manage_options'))wp_die('Forbidden','',array('response'=>403));check_admin_referer('xi_conversion_save');$c=self::config();
   foreach(array('gtm_id','ga4_id','ads_id','ads_label','whatsapp_label','email_label','analytics_service','ads_service','user_data_service') as $k)$c[$k]=sanitize_text_field(wp_unslash($_POST[$k]??''));
@@ -228,8 +228,8 @@ final class XI_Conversions {
   $c['enabled']=$enable;$c['enhanced']=isset($_POST['enhanced'])&&$c['user_data_service']!=='';update_option(self::OPTION,$c,false);wp_safe_redirect(admin_url('admin.php?page=xiaoman-conversions&updated=1'));exit;
  }
  static function page(){
-  if(!current_user_can('manage_options'))return;$c=self::config();echo '<div class="wrap"><h1>ת�������</h1><p>����ǰ���ݲ�ͣ�ö�Ӧ�ɱ�������ϵ�����ǩ���������� Google ����������ͬ�������GTM ���� ID ���Ǽǣ����ظ���װ������</p><form method="post" action="'.esc_url(admin_url('admin-post.php')).'"><input type="hidden" name="action" value="xi_conversion_save">';wp_nonce_field('xi_conversion_save');echo '<table class="form-table">';
-  foreach(array('gtm_id'=>'GTM ����','ga4_id'=>'GA4 ���� ID','ads_id'=>'Ads ת�� ID','ads_label'=>'����ת����ǩ','whatsapp_label'=>'WhatsApp ��Ҫ��ǩ����ѡ��','email_label'=>'�����Ҫ��ǩ����ѡ��','analytics_service'=>'ͳ��ͬ����� Unique Name','ads_service'=>'���洢ͬ����� Unique Name','user_data_service'=>'������ ad_user_data ��ͬ����� Unique Name') as $k=>$label)echo '<tr><th>'.esc_html($label).'</th><td><input class="regular-text" name="'.esc_attr($k).'" value="'.esc_attr($c[$k]).'"></td></tr>';
-  echo '<tr><th>��лҳ����·��</th><td><textarea name="thank_you_paths" rows="5" cols="65">'.esc_textarea(wp_json_encode((object)$c['thank_you_paths'],JSON_PRETTY_PRINT|JSON_UNESCAPED_SLASHES)).'</textarea><p>�ն���ʹ�� TranslatePress ʵ������·��������{"default":"/thank-you/","es":"/es/thank-you/"}��</p></td></tr></table><p><label><input type="checkbox" name="enabled" '.checked($c['enabled'],true,false).'>�ӹ���ѯ��ת��</label></p><p><label><input type="checkbox" name="enhanced" '.checked($c['enhanced'],true,false).'>��ǿ��ת������ͬ����������Ч���ʵ绰 SHA256</label></p>';submit_button('����ת������');echo '</form><p>վ�㣺'.esc_html($c['site_host']).'���ӹܱ߽磺'.absint($c['cutover_id']).'����վʱ����'.esc_html(wp_timezone_string()).'�����ͼ�¼ʹ�� UTC����������ʷѯ�̡�</p><p>claimed ��ʾȡ��һ�η����ʸ�callback ��Ϊ��ǩ�ص��������� Google ���ˡ�����Ŷ��ˣ�GA4 ������ Ads ԭ��������ӡ�</p></div>';
+  if(!current_user_can('manage_options'))return;$c=self::config();echo '<div class="wrap"><h1>转化与对账</h1><p>启用前备份并停用对应旧表单及联系点击标签，保留现有 Google 基础代码与同意管理。GTM 容器 ID 仅登记，不重复安装容器。</p><form method="post" action="'.esc_url(admin_url('admin-post.php')).'"><input type="hidden" name="action" value="xi_conversion_save">';wp_nonce_field('xi_conversion_save');echo '<table class="form-table">';
+  foreach(array('gtm_id'=>'GTM 容器','ga4_id'=>'GA4 衡量 ID','ads_id'=>'Ads 转化 ID','ads_label'=>'表单转化标签','whatsapp_label'=>'WhatsApp 次要标签（可选）','email_label'=>'邮箱次要标签（可选）','analytics_service'=>'统计同意服务 Unique Name','ads_service'=>'广告存储同意服务 Unique Name','user_data_service'=>'已声明 ad_user_data 的同意服务 Unique Name') as $k=>$label)echo '<tr><th>'.esc_html($label).'</th><td><input class="regular-text" name="'.esc_attr($k).'" value="'.esc_attr($c[$k]).'"></td></tr>';
+  echo '<tr><th>感谢页语言路径</th><td><textarea name="thank_you_paths" rows="5" cols="65">'.esc_textarea(wp_json_encode((object)$c['thank_you_paths'],JSON_PRETTY_PRINT|JSON_UNESCAPED_SLASHES)).'</textarea><p>空对象使用 TranslatePress 实际语言路径。例：{"default":"/thank-you/","es":"/es/thank-you/"}。</p></td></tr></table><p><label><input type="checkbox" name="enabled" '.checked($c['enabled'],true,false).'>接管新询盘转化</label></p><p><label><input type="checkbox" name="enhanced" '.checked($c['enhanced'],true,false).'>增强型转化：已同意的邮箱和有效国际电话 SHA256</label></p>';submit_button('保存转化配置');echo '</form><p>站点：'.esc_html($c['site_host']).'；接管边界：'.absint($c['cutover_id']).'；网站时区：'.esc_html(wp_timezone_string()).'。发送记录使用 UTC，不补发历史询盘。</p><p>claimed 表示取得一次发送资格；callback 仅为标签回调，不代表 Google 入账。按编号对账，GA4 导入与 Ads 原生不可相加。</p></div>';
  }
 }

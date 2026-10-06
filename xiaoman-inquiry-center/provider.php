@@ -6,8 +6,8 @@ final class XI_Xiaoman_Queue_V1 {
  const TOKEN='xi_lead_token_v1';
  static function hd_labels() {
   return array('H3'=>'PC/Mobile','H1'=>'Form Url','H2'=>'IP address',
-   'A1'=>'campaign','A2'=>'keyword','A3'=>'adgroup','A4'=>'device','A5'=>'gclid / fbclid','A6'=>'loc','A7'=>'���ID/����',
-   'R1'=>'�״���Դ��վ','R2'=>'�״ν���ҳ��','R3'=>'������Դ��վ','R4'=>'���ν���ҳ��','R5'=>'ѯ��ǰ��ҳ��','R6'=>'ѯ�̰�ť��ʶ');
+   'A1'=>'campaign','A2'=>'keyword','A3'=>'adgroup','A4'=>'device','A5'=>'gclid / fbclid','A6'=>'loc','A7'=>'广告ID/名称',
+   'R1'=>'首次来源网站','R2'=>'首次进入页面','R3'=>'本次来源网站','R4'=>'本次进入页面','R5'=>'询盘前个页面','R6'=>'询盘按钮标识');
  }
  static function metadata_url($value,$internal=false) {
   return XI_Request_Attribution_V1::safe_url($value,$internal,$internal);
@@ -74,13 +74,13 @@ final class XI_Xiaoman_Queue_V1 {
  static function token() {
   $cached=get_transient(self::TOKEN);
   if (is_string($cached) && $cached!=='') return $cached;
-  if (!XI_Config::credential('id') || !XI_Config::credential('secret')) return new WP_Error('auth','API ƾ֤δ����');
+  if (!XI_Config::credential('id') || !XI_Config::credential('secret')) return new WP_Error('auth','API 凭证未配置');
   $r=wp_remote_post(self::API.'/v1/oauth2/access_token',array('timeout'=>15,'redirection'=>0,
    'headers'=>array('Content-Type'=>'application/json','Accept'=>'application/json'),
    'body'=>wp_json_encode(array('grant_type'=>'client_credentials','client_id'=>XI_Config::credential('id'),'client_secret'=>XI_Config::credential('secret'),'scope'=>'lead'))));
-  if (is_wp_error($r)) return new WP_Error('auth','��ȡ����ʱ��������ʧ��');
+  if (is_wp_error($r)) return new WP_Error('auth','获取令牌时网络连接失败');
   $http=(int)wp_remote_retrieve_response_code($r); $d=json_decode(wp_remote_retrieve_body($r),true);
-  if ($http!==200 || empty($d['access_token']) || !is_string($d['access_token'])) return new WP_Error('auth','��ȡ����ʧ�ܣ�HTTP '.$http);
+  if ($http!==200 || empty($d['access_token']) || !is_string($d['access_token'])) return new WP_Error('auth','获取令牌失败，HTTP '.$http);
   $token=$d['access_token']; $ttl=4*HOUR_IN_SECONDS;
   // OKKI validates the token; a 401 clears this cache before a bounded retry.
   if (!empty($d['expires_in']) && is_numeric($d['expires_in'])) $ttl=min($ttl,(int)$d['expires_in']-120);
@@ -88,7 +88,7 @@ final class XI_Xiaoman_Queue_V1 {
   return $token;
  }
  static function error_hint($response,$payload,$token) {
-  $message=is_array($response)&&isset($response['message'])&&is_string($response['message'])?$response['message']:'�����ֶΡ���Դ�� API Ȩ��';
+  $message=is_array($response)&&isset($response['message'])&&is_string($response['message'])?$response['message']:'请检查字段、来源和 API 权限';
   $values=array($token);
   $values[]=XI_Config::credential('id');$values[]=XI_Config::credential('secret');
   $data=json_decode($payload,true);
@@ -96,37 +96,37 @@ final class XI_Xiaoman_Queue_V1 {
    $values[]=$data['name']??'';
    foreach(($data['customers']??array()) as $customer) foreach(array('name','email','whatsapp') as $key) $values[]=$customer[$key]??'';
   }
-  foreach($values as $value) if(is_string($value)&&$value!=='') $message=str_replace($value,'[������]',$message);
-  $message=preg_replace('/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i','[����]',$message);
-  $message=preg_replace('/\+?[0-9]{7,}/','[���]',$message);
+  foreach($values as $value) if(is_string($value)&&$value!=='') $message=str_replace($value,'[已隐藏]',$message);
+  $message=preg_replace('/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i','[邮箱]',$message);
+  $message=preg_replace('/\+?[0-9]{7,}/','[编号]',$message);
   return self::text($message,180);
  }
  static function configuration_data($value,$secrets,$key='') {
   // Metadata is rendered as text. Never display tokens/credentials if an API echoes them.
-  if(preg_match('/token|secret|password|authorization|client_id/i',(string)$key)) return '[������]';
+  if(preg_match('/token|secret|password|authorization|client_id/i',(string)$key)) return '[已隐藏]';
   if(is_array($value)) {
    $clean=array(); foreach($value as $k=>$v) $clean[$k]=self::configuration_data($v,$secrets,$k);
    return $clean;
   }
-  if(is_string($value)) foreach($secrets as $secret) if(is_string($secret)&&$secret!=='') $value=str_replace($secret,'[������]',$value);
+  if(is_string($value)) foreach($secrets as $secret) if(is_string($secret)&&$secret!=='') $value=str_replace($secret,'[已隐藏]',$value);
   return $value;
  }
  static function configuration_get($path,$token) {
   // Fixed read-only allowlist: no customer endpoints or caller-supplied remote URLs.
-  if(!in_array($path,array('/v1/company/fields/selector?field=origin','/v1/lead/fields?type=lead'),true)) return new WP_Error('endpoint','�ֶμ��˵���Ч');
+  if(!in_array($path,array('/v1/company/fields/selector?field=origin','/v1/lead/fields?type=lead'),true)) return new WP_Error('endpoint','字段检测端点无效');
   $response=wp_remote_get(self::API.$path,array('timeout'=>15,'redirection'=>0,
    'headers'=>array('Accept'=>'application/json','Authorization'=>$token)));
-  if(is_wp_error($response)) return new WP_Error('network','�ֶ����ö�ȡʧ�ܣ����������쳣');
+  if(is_wp_error($response)) return new WP_Error('network','字段配置读取失败：网络连接异常');
   $http=(int)wp_remote_retrieve_response_code($response);
   $data=json_decode(wp_remote_retrieve_body($response),true);
   $code=is_array($data)&&isset($data['code'])&&is_numeric($data['code'])?(int)$data['code']:0;
   if($http<200||$http>=300||!is_array($data)||($code!==0&&$code!==200)||!array_key_exists('data',$data))
-   return new WP_Error('metadata','�ֶ����ö�ȡʧ�ܣ�HTTP '.$http.' / API '.$code);
+   return new WP_Error('metadata','字段配置读取失败：HTTP '.$http.' / API '.$code);
   return $data['data'];
  }
  static function configuration_product_fields($data) {
   $found=array(); if(!is_array($data)) return $found;
-  if(in_array($data['name']??'',array('�����Ʒ','�ͻ��ȼ�'),true)) {
+  if(in_array($data['name']??'',array('意向产品','客户等级'),true)) {
    $item=array(); foreach(array('id','name','field_type','ext_info') as $key) $item[$key]=$data[$key]??null;
    return array($item);
   }
@@ -134,23 +134,23 @@ final class XI_Xiaoman_Queue_V1 {
   return $found;
  }
  static function inspect_configuration() {
-  if(!current_user_can('manage_options')) return new WP_Error('permission','û�м���ֶ����õ�Ȩ��');
+  if(!current_user_can('manage_options')) return new WP_Error('permission','没有检测字段配置的权限');
   if(!XI_Config::credential('id')||!XI_Config::credential('secret'))
-   return new WP_Error('auth','API ƾ֤δ����');
+   return new WP_Error('auth','API 凭证未配置');
   // Independent, uncached token for this read. Leave the ordinary lead token untouched.
   $response=wp_remote_post(self::API.'/v1/oauth2/access_token',array('timeout'=>15,'redirection'=>0,
    'headers'=>array('Content-Type'=>'application/json','Accept'=>'application/json'),
    'body'=>wp_json_encode(array('grant_type'=>'client_credentials','client_id'=>XI_Config::credential('id'),'client_secret'=>XI_Config::credential('secret'),'scope'=>'company lead'))));
-  if(is_wp_error($response)) return new WP_Error('auth','�ֶμ����Ȩʧ�ܣ����������쳣');
+  if(is_wp_error($response)) return new WP_Error('auth','字段检测授权失败：网络连接异常');
   $http=(int)wp_remote_retrieve_response_code($response);$data=json_decode(wp_remote_retrieve_body($response),true);
   if($http!==200||!is_array($data)||empty($data['access_token'])||!is_string($data['access_token']))
-   return new WP_Error('auth','�ֶμ����Ȩʧ�ܣ�HTTP '.$http);
+   return new WP_Error('auth','字段检测授权失败：HTTP '.$http);
   $token=$data['access_token']; $secrets=array($token,XI_Config::credential('id'),XI_Config::credential('secret'));
   $origin=self::configuration_get('/v1/company/fields/selector?field=origin',$token);
   $fields=self::configuration_get('/v1/lead/fields?type=lead',$token);
   return array(
-   '��Դ����'=>is_wp_error($origin)?array('error'=>$origin->get_error_message()):array('data'=>self::configuration_data($origin,$secrets)),
-   '����ӳ���ֶ�'=>is_wp_error($fields)?array('error'=>$fields->get_error_message()):array('data'=>self::configuration_data(self::configuration_product_fields($fields),$secrets)));
+   '来源配置'=>is_wp_error($origin)?array('error'=>$origin->get_error_message()):array('data'=>self::configuration_data($origin,$secrets)),
+   '线索映射字段'=>is_wp_error($fields)?array('error'=>$fields->get_error_message()):array('data'=>self::configuration_data(self::configuration_product_fields($fields),$secrets)));
  }
  static function tracking() {
   if(is_admin() || (function_exists('bricks_is_builder') && bricks_is_builder())) return;
@@ -162,14 +162,14 @@ final class XI_Xiaoman_Queue_V1 {
   $map=XI_Config::get()['products'];
   $value=$map[$key]??'';
   $lead=XI_Config::get()['product_lead_names'][$key]??'';
-  return array('lead_name'=>$lead!==''?$lead:($value!==''?$value:'����'),'product_name'=>$value);
+  return array('lead_name'=>$lead!==''?$lead:($value!==''?$value:'其他'),'product_name'=>$value);
  }
  static function payload($submission,$submitted_at=null) {
   $submitted_at=$submitted_at??time(); $config=XI_Config::get();
-  if(!preg_match('/^[1-9][0-9]*$/D',$config['origin_id'])) return new WP_Error('origin','��δ�˶Ա�վ��С����Դ����');
+  if(!preg_match('/^[1-9][0-9]*$/D',$config['origin_id'])) return new WP_Error('origin','尚未核对本站的小满来源配置');
   $fields=array();foreach(($submission['fields']??array()) as $f) if(is_array($f)&&isset($f['id'])) $fields[$f['id']]=$f['value']??'';
   $email=sanitize_email(self::text($fields['F5']??'',150));
-  if(!is_email($email)) return new WP_Error('mapping','ԭʼѯ��������Ч');
+  if(!is_email($email)) return new WP_Error('mapping','原始询盘邮箱无效');
   $name=self::text(trim(($fields['F3']??'').' '.($fields['F4']??'')),150);
   if($name==='') $name=$email; // Preserve existing saved test records with no name.
   $phone=preg_replace('/[^0-9+]/','',self::text($fields['F6']??'',50));
@@ -191,11 +191,11 @@ final class XI_Xiaoman_Queue_V1 {
  static function inquiry_remark($fields,$time,$id) {
   $date=(new DateTimeImmutable('@'.(int)$time))->setTimezone(wp_timezone())->format('Y-m-d H:i:s');
   $parts=array();
-  foreach(array('���'=>XI_PROFILE['number_prefix'].$id,'ʱ��'=>$date,'����'=>self::country_name(self::country($fields['IP']??'')),
-   '�����Ʒ'=>$fields['F1']??'','�����ͺ�'=>$fields['F2']??'','���Ʒ�ʽ'=>$fields['customization_type']??'') as $label=>$value)
-   if(($value=self::text($value,500))!=='')$parts[]=$label.'��'.$value;
-  if(($message=self::text($fields['F9']??'',10000))!=='') { $parts[]='';$parts[]='������Ϣ��';$parts[]=$message; }
-  if(($url=self::text($fields['H1']??'',1800))!=='') { $parts[]='';$parts[]='ѯ������ҳ�棺';$parts[]=$url; }
+  foreach(array('编号'=>XI_PROFILE['number_prefix'].$id,'时间'=>$date,'国家'=>self::country_name(self::country($fields['IP']??'')),
+   '需求产品'=>$fields['F1']??'','需求型号'=>$fields['F2']??'','定制方式'=>$fields['customization_type']??'') as $label=>$value)
+   if(($value=self::text($value,500))!=='')$parts[]=$label.'：'.$value;
+  if(($message=self::text($fields['F9']??'',10000))!=='') { $parts[]='';$parts[]='留言信息：';$parts[]=$message; }
+  if(($url=self::text($fields['H1']??'',1800))!=='') { $parts[]='';$parts[]='询盘留言页面：';$parts[]=$url; }
   return implode("\n",$parts);
  }
 }

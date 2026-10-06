@@ -1,7 +1,7 @@
 <?php
 /**
- * Plugin Name: С��ѯ������
- * Description: Bricks ԭ��������ѯ�̺�̨���������ԡ��������С��ͬ��ͳһ������
+ * Plugin Name: 小满询盘中心
+ * Description: Bricks 原生表单、询盘后台、条件留言、广告归因和小满同步统一管理。
  * Version: 2.0.0-beta.9
  * Requires at least: 6.9
  * Requires PHP: 8.2
