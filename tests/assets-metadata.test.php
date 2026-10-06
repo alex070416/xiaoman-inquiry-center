@@ -4,7 +4,7 @@ define('ABSPATH', __DIR__ . '/fixture-only/');
 define('ARRAY_A', 'ARRAY_A');
 define('XI_HOST', 'fixture.example.invalid');
 define('XI_FILE', __FILE__);
-define('XI_VERSION', '2.0.0-beta.9');
+define('XI_VERSION', '2.0.0-beta.10');
 define('XI_PROFILE', array('number_prefix' => 'FW-N'));
 
 $fixture = array();
