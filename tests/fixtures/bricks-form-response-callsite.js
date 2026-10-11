@@ -1,0 +1,4 @@
+/* Minimal observed Bricks success/redirect decision excerpt for offline regression.
+ * Public runtime SHA-256: fb78b1e77a0c08705e4e07529869040146b3193e14d81a5d6c3b273ac82fe55c
+ * The test supplies m="bricks/form/success" before evaluation; no production config/customer data. */
+m&&document.dispatchEvent(new CustomEvent(m,{detail:{elementId:e,formData:d,res:f}})),!f.success||"mailchimp"!==(null===(a=f.data)||void 0===a?void 0:a.action)&&"sendgrid"!==(null===(s=f.data)||void 0===s?void 0:s.action)||(window.dataLayer=window.dataLayer||[],window.dataLayer.push({event:"bricksNewsletterSignup"}));var k,h=!0;if(f.success&&null!==(l=f.data)&&void 0!==l&&l.redirectTo)h=!1,setTimeout(function(){window.location.href=f.data.redirectTo},parseInt(null===(k=f.data)||void 0===k?void 0:k.redirectTimeout)||0);else f.success&&null!==(u=f.data)&&void 0!==u&&u.refreshPage&&(h=!1,setTimeout(function(){window.location.reload()},1e3));
