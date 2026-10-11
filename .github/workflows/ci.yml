@@ -17,6 +17,8 @@ jobs:
       - run: php tests/build-release.test.php
       - run: php -n tests/lead-date.test.php
       - run: php -n tests/assets-metadata.test.php
+      - run: php -n tests/form-response.test.php
+      - run: php -n tests/privacy-routing.test.php
       - run: php tests/owner-protocol.test.php
       - run: php tests/schema-rolling.test.php
       - run: for site in fangwei huajing anxing rongfeng tongqu; do php tests/compatibility.test.php "$site" || exit 1; done
@@ -30,3 +32,4 @@ jobs:
           cache: npm
       - run: npm ci --ignore-scripts --omit=optional
       - run: npm test
+

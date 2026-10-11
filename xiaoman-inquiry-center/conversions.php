@@ -9,11 +9,14 @@ final class XI_Conversions {
  static $tickets=array();
  static $enqueued=false;
  static $owner_schema=null;
- static function defaults(){return array('enabled'=>false,'site_host'=>'','cutover_id'=>0,'gtm_id'=>'','ga4_id'=>'','ads_id'=>'','ads_label'=>'','whatsapp_label'=>'','email_label'=>'','analytics_service'=>'','ads_service'=>'','user_data_service'=>'','enhanced'=>false,'thank_you_paths'=>array());}
+ static $original_request_uri=null;
+ static function defaults(){return array('enabled'=>false,'site_host'=>'','cutover_id'=>0,'gtm_id'=>'','ga4_id'=>'','ads_id'=>'','ads_label'=>'','whatsapp_label'=>'','email_label'=>'','analytics_service'=>'','ads_service'=>'','user_data_service'=>'','pending_ads_storage_service'=>'','enhanced'=>false,'thank_you_paths'=>array());}
  static function config(){return wp_parse_args((array)get_option(self::OPTION,array()),self::defaults());}
  static function active(){$c=self::config();return $c['enabled'] && $c['site_host']===XI_HOST;}
  static function table(){global $wpdb;return $wpdb->prefix.'xi_conversion_receipts';}
  static function boot(){
+  // Preserve the incoming path before translation routing can rewrite REQUEST_URI.
+  if(self::$original_request_uri===null)self::$original_request_uri=(string)($_SERVER['REQUEST_URI']??'');
   add_filter('bricks/form/response',array(__CLASS__,'response'),90,2);add_action('wp_enqueue_scripts',array(__CLASS__,'assets'),0);
   add_action('wp_head',array(__CLASS__,'early_assets'),-100);
   add_action('template_redirect',array(__CLASS__,'privacy_headers'),0);
@@ -107,6 +110,16 @@ final class XI_Conversions {
  static function is_thank_you_path($path){
   return is_string($path)&&in_array(rtrim($path,'/').'/',self::thank_you_routes(),true);
  }
+ static function is_thank_you_request(){
+  $incoming=self::$original_request_uri===null?(string)($_SERVER['REQUEST_URI']??''):self::$original_request_uri;
+  if(self::is_thank_you_path((string)wp_parse_url($incoming,PHP_URL_PATH)))return true;
+  // Some translation routers use an alias not present in configured language routes.
+  // The fallback must prove this is the configured canonical thank-you WP page, not a URL guess.
+  $url=self::absolute_path(self::config()['thank_you_paths']['default']??'');
+  if($url===''||!function_exists('url_to_postid')||!function_exists('get_queried_object_id')||!function_exists('is_page')||!function_exists('get_post_type')||!is_page())return false;
+  try{$id=(int)url_to_postid($url);return $id>0&&get_post_type($id)==='page'&&(int)get_queried_object_id()===$id;}
+  catch(Throwable $e){return false;}
+ }
  static function states($v){$out=array();foreach(array('analytics_storage','ad_storage','ad_user_data','ad_personalization') as $k)$out[$k]=($v[$k]??'denied')==='granted'?'granted':'denied';return $out;}
  static function service_ready($name,$purpose){
   if(!is_string($name)||$name===''||!post_type_exists('rcb-cookie'))return false;
@@ -135,7 +148,14 @@ final class XI_Conversions {
   // A measurement storage fault must not invite repeat form/CRM submissions.
   try{XI_Lead_Stages::record($id,'initial','');$token=self::issue($id,$r);if($token!=='')$args['xi_receipt']=$token;}catch(Throwable $e){$token='';}
   $response['redirectTo']=add_query_arg($args,self::thank_you($r));if(array_key_exists('redirectUrl',$response))$response['redirectUrl']=$response['redirectTo'];
-  $response['xiTracking']=$token!==''?'receipt_issued':'unavailable';return $response;
+  $response['xiTracking']=$token!==''?'receipt_issued':'unavailable';
+  // Form-page dispatch uses the original server deadline, never a new client-side 30-minute period.
+  if($token!==''&&self::schema_ready()&&($row=self::receipt($token,XI_Native_Inquiry_Center::number($id)))){
+   $response['xiReceiptProtocol']=self::PROTOCOL;
+   $response['xiReceiptExpiresAt']=strtotime($row['expires_utc'].' UTC');
+   $response['xiReceiptPendingChannels']=array('ga4'=>$row['ga4_state']==='pending','ads'=>$row['ads_state']==='pending');
+  }
+  return $response;
  }
  static function email_hash($v){$v=strtolower(trim((string)$v));if(!is_email($v))return '';list($local,$host)=explode('@',$v,2);if(in_array($host,array('gmail.com','googlemail.com'),true))$local=str_replace('.','',$local);return hash('sha256',$local.'@'.$host);}
  static function phone_hash($v){$v=preg_replace('/[\s().-]/','',trim((string)$v));return preg_match('/^\+[1-9][0-9]{7,14}$/D',$v)?hash('sha256',$v):'';}
@@ -197,39 +217,45 @@ final class XI_Conversions {
   if(self::$enqueued||!self::active()||is_admin())return;self::$enqueued=true;$c=self::config();$pub=array_intersect_key($c,array_flip(array('site_host','ga4_id','ads_id','ads_label','whatsapp_label','email_label','analytics_service','ads_service','user_data_service')));$pub['endpoint']=admin_url('admin-ajax.php?action=xi_conversion');$pub['number_prefix']=XI_PROFILE['number_prefix'];$pub['thank_you_routes']=self::thank_you_routes();
   foreach(array('analytics_service'=>'analytics_storage','ads_service'=>'ad_storage','user_data_service'=>'ad_user_data') as $key=>$purpose)if(!self::service_ready($c[$key],$purpose))$pub[$key]='';
   $pub['pending_storage_service']=$pub['analytics_service'];
+  // Opt-in migration: the operator must first register xi_conversion_pending_v1 and its cleanup in this Ads service.
+  $pub['pending_ads_storage_service']=self::service_ready($c['pending_ads_storage_service'],'ad_storage')?$c['pending_ads_storage_service']:'';
   // Only the uncached, original receipt page publishes its existing expiry and pending mask.
   // Clean-URL refreshes use the same-tab pointer; server claim still validates the original receipt.
   $token=is_string($_GET['xi_receipt']??null)?wp_unslash($_GET['xi_receipt']):'';
   $number=is_string($_GET['inquiry_id']??null)?wp_unslash($_GET['inquiry_id']):'';
-  if(self::is_thank_you_path((string)wp_parse_url($_SERVER['REQUEST_URI']??'',PHP_URL_PATH))&&($row=self::receipt($token,$number))){
+  if(self::is_thank_you_request()&&($row=self::receipt($token,$number))){
    $pub['receipt_expires_at']=strtotime($row['expires_utc'].' UTC');
    $pub['receipt_pending_channels']=array('ga4'=>$row['ga4_state']==='pending','ads'=>$row['ads_state']==='pending');
   }
   $owned=self::schema_ready();$pub['receipt_protocol']=$owned?self::PROTOCOL:'';$pub['owned_endpoint']=$owned?admin_url('admin-ajax.php?action=xi_conversion_owned'):'';
   // A failed migration keeps the beta.7 tracking path instead of silently disabling all form events.
-  wp_enqueue_script('xi-conversions',plugins_url($owned?'conversions.js':'conversions.legacy.js',XI_FILE),array(),XI_VERSION,false);wp_add_inline_script('xi-conversions','window.XIConversionConfig='.wp_json_encode($pub).';','before');
+  wp_enqueue_script('xi-conversions',plugins_url($owned?'conversions.js':'conversions.legacy.js',XI_FILE),array(),$owned?XI_VERSION.'-dispatch-candidate20261011':XI_VERSION,false);wp_add_inline_script('xi-conversions','window.XIConversionConfig='.wp_json_encode($pub).';','before');
  }
  static function early_assets(){self::assets();if(self::$enqueued)wp_print_scripts('xi-conversions');}
  static function privacy_headers(){
-  if(!self::active()||!self::is_thank_you_path((string)wp_parse_url($_SERVER['REQUEST_URI']??'',PHP_URL_PATH)))return;
-  if(!defined('DONOTCACHEPAGE'))define('DONOTCACHEPAGE',true);nocache_headers();header('Cache-Control: no-store, private');header('Referrer-Policy: same-origin');header('X-Robots-Tag: noindex, nofollow');
+  if(!self::active()||!self::is_thank_you_request())return;
+  if(!defined('DONOTCACHEPAGE'))define('DONOTCACHEPAGE',true);
+  do_action('litespeed_control_set_nocache','XI configured thank-you page');
+  nocache_headers();header('Cache-Control: no-store, private');header('Referrer-Policy: same-origin');header('X-Robots-Tag: noindex, nofollow');
  }
  static function inline_attributes($attrs){if(($attrs['id']??'')==='xi-conversions-js-before')$attrs=array_merge($attrs,array('data-no-optimize'=>'1','data-no-defer'=>'1','data-cfasync'=>'false'));return $attrs;}
  static function script_tag($tag,$handle){if($handle!=='xi-conversions')return $tag;$p=new WP_HTML_Tag_Processor($tag);if($p->next_tag('SCRIPT'))foreach(array('data-no-optimize'=>'1','data-no-defer'=>'1','data-cfasync'=>'false') as $key=>$value)$p->set_attribute($key,$value);return $p->get_updated_html();}
  static function menu(){add_submenu_page(XI_Native_Inquiry_Center::PAGE,'转化与对账','转化与对账','manage_options','xiaoman-conversions',array(__CLASS__,'page'));}
  static function save_config(){
   if(!current_user_can('manage_options'))wp_die('Forbidden','',array('response'=>403));check_admin_referer('xi_conversion_save');$c=self::config();
-  foreach(array('gtm_id','ga4_id','ads_id','ads_label','whatsapp_label','email_label','analytics_service','ads_service','user_data_service') as $k)$c[$k]=sanitize_text_field(wp_unslash($_POST[$k]??''));
+  foreach(array('gtm_id','ga4_id','ads_id','ads_label','whatsapp_label','email_label','analytics_service','ads_service','user_data_service','pending_ads_storage_service') as $k)$c[$k]=sanitize_text_field(wp_unslash($_POST[$k]??''));
   foreach(array('gtm_id'=>'/^GTM-[A-Z0-9]+$/D','ga4_id'=>'/^G-[A-Z0-9]+$/D','ads_id'=>'/^AW-[0-9]+$/D','ads_label'=>'/^[A-Za-z0-9_-]+$/D','whatsapp_label'=>'/^[A-Za-z0-9_-]+$/D','email_label'=>'/^[A-Za-z0-9_-]+$/D') as $k=>$re)if($c[$k]!==''&&!preg_match($re,$c[$k]))wp_die('Invalid '.$k);
   $paths=json_decode(wp_unslash($_POST['thank_you_paths']??'{}'),true);if(!is_array($paths))wp_die('Invalid paths');foreach($paths as $lang=>$path)if(!preg_match('/^(default|[a-zA-Z0-9_-]+)$/D',(string)$lang)||!self::safe_path($path))wp_die('Invalid thank-you path');$c['thank_you_paths']=$paths;
   $enable=isset($_POST['enabled']);if($enable&&(!$c['ga4_id']||!$c['ads_id']||!$c['ads_label']||!self::service_ready($c['analytics_service'],'analytics_storage')||!self::service_ready($c['ads_service'],'ad_storage')||!self::setup()||!XI_Lead_Stages::setup()))wp_die('Missing destinations, published consent-purpose declarations or storage');
   if($enable&&isset($_POST['enhanced'])&&!self::service_ready($c['user_data_service'],'ad_user_data'))wp_die('Enhanced conversions require a published ad_user_data consent declaration');
+  if($c['pending_ads_storage_service']!==''&&!self::service_ready($c['pending_ads_storage_service'],'ad_storage'))wp_die('Ads pending storage requires a published ad_storage service that declares xi_conversion_pending_v1');
   if($enable&&!$c['enabled']){global $wpdb;$c['cutover_id']=(int)$wpdb->get_var('SELECT MAX(id) FROM '.XI_Native_Inquiry_Center::table());$c['site_host']=XI_HOST;}
   $c['enabled']=$enable;$c['enhanced']=isset($_POST['enhanced'])&&$c['user_data_service']!=='';update_option(self::OPTION,$c,false);wp_safe_redirect(admin_url('admin.php?page=xiaoman-conversions&updated=1'));exit;
  }
  static function page(){
   if(!current_user_can('manage_options'))return;$c=self::config();echo '<div class="wrap"><h1>转化与对账</h1><p>启用前备份并停用对应旧表单及联系点击标签，保留现有 Google 基础代码与同意管理。GTM 容器 ID 仅登记，不重复安装容器。</p><form method="post" action="'.esc_url(admin_url('admin-post.php')).'"><input type="hidden" name="action" value="xi_conversion_save">';wp_nonce_field('xi_conversion_save');echo '<table class="form-table">';
   foreach(array('gtm_id'=>'GTM 容器','ga4_id'=>'GA4 衡量 ID','ads_id'=>'Ads 转化 ID','ads_label'=>'表单转化标签','whatsapp_label'=>'WhatsApp 次要标签（可选）','email_label'=>'邮箱次要标签（可选）','analytics_service'=>'统计同意服务 Unique Name','ads_service'=>'广告存储同意服务 Unique Name','user_data_service'=>'已声明 ad_user_data 的同意服务 Unique Name') as $k=>$label)echo '<tr><th>'.esc_html($label).'</th><td><input class="regular-text" name="'.esc_attr($k).'" value="'.esc_attr($c[$k]).'"></td></tr>';
+  echo '<tr><th>广告待发收据存储服务（可选）</th><td><input class="regular-text" name="pending_ads_storage_service" value="'.esc_attr($c['pending_ads_storage_service']).'"><p>先在该已发布的 ad_storage 服务登记 Session Storage xi_conversion_pending_v1、最长 30 分钟及撤回/到期清理规则，再填写 Unique Name。留空保持现有统计服务映射；仅同意广告而未同意统计时，不会擅自写入未声明存储。</p></td></tr>';
   echo '<tr><th>感谢页语言路径</th><td><textarea name="thank_you_paths" rows="5" cols="65">'.esc_textarea(wp_json_encode((object)$c['thank_you_paths'],JSON_PRETTY_PRINT|JSON_UNESCAPED_SLASHES)).'</textarea><p>空对象使用 TranslatePress 实际语言路径。例：{"default":"/thank-you/","es":"/es/thank-you/"}。</p></td></tr></table><p><label><input type="checkbox" name="enabled" '.checked($c['enabled'],true,false).'>接管新询盘转化</label></p><p><label><input type="checkbox" name="enhanced" '.checked($c['enhanced'],true,false).'>增强型转化：已同意的邮箱和有效国际电话 SHA256</label></p>';submit_button('保存转化配置');echo '</form><p>站点：'.esc_html($c['site_host']).'；接管边界：'.absint($c['cutover_id']).'；网站时区：'.esc_html(wp_timezone_string()).'。发送记录使用 UTC，不补发历史询盘。</p><p>claimed 表示取得一次发送资格；callback 仅为标签回调，不代表 Google 入账。按编号对账，GA4 导入与 Ads 原生不可相加。</p></div>';
  }
 }
