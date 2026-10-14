@@ -3,7 +3,8 @@ if(!defined('ABSPATH'))exit;
 /** Local funnel ledger only. No customer-data or offline conversion uploads. */
 final class XI_Lead_Stages {
  static function table(){global $wpdb;return $wpdb->prefix.'xi_lead_stages';}
- static function boot(){add_action('admin_menu',array(__CLASS__,'menu'),47);add_action('admin_post_xi_lead_stage',array(__CLASS__,'save'));}
+ // Manual stage management is retired. Keep the ledger API for form receipts.
+ static function boot(){}
  static function setup(){
   global $wpdb;require_once ABSPATH.'wp-admin/includes/upgrade.php';$t=self::table();$charset=$wpdb->get_charset_collate();
   dbDelta("CREATE TABLE $t (
