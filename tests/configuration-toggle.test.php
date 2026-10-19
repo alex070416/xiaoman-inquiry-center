@@ -30,7 +30,7 @@ function get_transient($v){$GLOBALS['cache_reads'][]=$v;return 'ordinary-lead-to
 function admin_url($p){return 'https://mock-wordpress.invalid/wp-admin/'.$p;}
 function wp_safe_redirect($v){throw new TestRedirect($v);}
 function wp_die($v,$title='',$args=array()){throw new TestDie($v,$args['response']??500);}
-function check_admin_referer($v){$GLOBALS['nonce_checks'][]=$v;if(!$GLOBALS['nonce_valid'])wp_die('��ȫУ��ʧ�ܡ�','',array('response'=>403));}
+function check_admin_referer($v){$GLOBALS['nonce_checks'][]=$v;if(!$GLOBALS['nonce_valid'])wp_die('安全校验失败。','',array('response'=>403));}
 function nocache_headers(){$GLOBALS['nocache']++;}
 function esc_html($v){return htmlspecialchars((string)$v,ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8');}
 function esc_attr($v){return esc_html($v);}
@@ -61,14 +61,14 @@ function wp_remote_get($url,$args){
  $GLOBALS['http'][]=array('method'=>'GET','url'=>$url,'args'=>$args);
  if($GLOBALS['mode']==='metadata-error')return response(403,array('code'=>403,'data'=>null,'message'=>'PRIVATE_RAW MOCK-SECRET-45CD'));
  if($GLOBALS['mode']==='origin-actual'&&str_ends_with($url,'/v1/company/fields/selector?field=origin')){
-  $origins=array();for($i=0;$i<59;$i++)$origins[]=array('origin_id'=>'99000000000'.str_pad((string)$i,3,'0',STR_PAD_LEFT),'origin_name'=>'վ����Դ'.$i.($i===0?' MOCK-SECRET-45CD MOCK-TOKEN-67EF MOCK-CLIENT-92AB':''),'name_info'=>array('info_label'=>'PRIVATE_RAW','info_value'=>'PRIVATE_RAW'),'parent_id'=>'0');
+  $origins=array();for($i=0;$i<59;$i++)$origins[]=array('origin_id'=>'99000000000'.str_pad((string)$i,3,'0',STR_PAD_LEFT),'origin_name'=>'站点来源'.$i.($i===0?' MOCK-SECRET-45CD MOCK-TOKEN-67EF MOCK-CLIENT-92AB':''),'name_info'=>array('info_label'=>'PRIVATE_RAW','info_value'=>'PRIVATE_RAW'),'parent_id'=>'0');
   return response(200,array('code'=>200,'data'=>$origins));
  }
- if(str_ends_with($url,'/v1/company/fields/selector?field=origin'))return response(200,array('code'=>0,'data'=>array('entries'=>array(array('id'=>'46500000000000','name'=>'������վ MOCK-SECRET-45CD','note'=>'PRIVATE_RAW')),'customers'=>array(array('id'=>99,'name'=>'PRIVATE_CUSTOMER')))));
+ if(str_ends_with($url,'/v1/company/fields/selector?field=origin'))return response(200,array('code'=>0,'data'=>array('entries'=>array(array('id'=>'46500000000000','name'=>'华腾网站 MOCK-SECRET-45CD','note'=>'PRIVATE_RAW')),'customers'=>array(array('id'=>99,'name'=>'PRIVATE_CUSTOMER')))));
  if(str_ends_with($url,'/v1/lead/fields?type=lead'))return response(200,array('code'=>200,'data'=>array('groups'=>array(array('fields'=>array(
-  array('id'=>'14206903842368','name'=>'�����Ʒ','field_type'=>7,'ext_info'=>wp_json_encode(array('enumchoices'=>array(array('id'=>8,'name'=>'�泵 MOCK-TOKEN-67EF MOCK-CLIENT-92AB MOCK-SECRET-45CD')),'access_token'=>'MOCK-TOKEN-67EF','client_id'=>'MOCK-CLIENT-92AB','customers'=>array('PRIVATE_CUSTOMER')))),
-  array('id'=>'19675841541642','name'=>'�ͻ��ȼ�','field_type'=>1,'ext_info'=>array('options'=>array('��ͨ'),'default'=>false)),
-  array('id'=>98,'name'=>'�ͻ�����','ext_info'=>array('PRIVATE_CONTACT'))
+  array('id'=>'14206903842368','name'=>'意向产品','field_type'=>7,'ext_info'=>wp_json_encode(array('enumchoices'=>array(array('id'=>8,'name'=>'叉车 MOCK-TOKEN-67EF MOCK-CLIENT-92AB MOCK-SECRET-45CD')),'access_token'=>'MOCK-TOKEN-67EF','client_id'=>'MOCK-CLIENT-92AB','customers'=>array('PRIVATE_CUSTOMER')))),
+  array('id'=>'19675841541642','name'=>'客户等级','field_type'=>1,'ext_info'=>array('options'=>array('普通'),'default'=>false)),
+  array('id'=>98,'name'=>'客户邮箱','ext_info'=>array('PRIVATE_CONTACT'))
  ))))));
  throw new RuntimeException('Unexpected mock endpoint');
 }
@@ -82,7 +82,7 @@ function reset_mock(){
 }
 function case_done($name){$GLOBALS['cases'][]=$name;}
 function save_post($overrides=array()){
- $_POST=array_merge(array('crm_control_v1'=>'1','api'=>'https://api-sandbox.xiaoman.cn','origin_id'=>'46500000000000','origin_name'=>'����','product_field'=>'14206903842368','level_field'=>'19675841541642','level_value'=>'','post_type'=>'products','taxonomies'=>'product-category,invalid','products'=>'{"forklift":"���Ͳ泵"}','product_lead_names'=>'{"forklift":"�泵"}','equipment_labels'=>'{"forklift":"�泵"}','field_aliases'=>'{"email":"F5"}','client_id'=>'','client_secret'=>''),$overrides);
+ $_POST=array_merge(array('crm_control_v1'=>'1','api'=>'https://api-sandbox.xiaoman.cn','origin_id'=>'46500000000000','origin_name'=>'华腾','product_field'=>'14206903842368','level_field'=>'19675841541642','level_value'=>'','post_type'=>'products','taxonomies'=>'product-category,invalid','products'=>'{"forklift":"柴油叉车"}','product_lead_names'=>'{"forklift":"叉车"}','equipment_labels'=>'{"forklift":"叉车"}','field_aliases'=>'{"email":"F5"}','client_id'=>'','client_secret'=>''),$overrides);
 }
 function invoke_save(){try{XI_Config::save();}catch(TestRedirect $e){return true;}catch(TestDie $e){return $e;}return false;}
 reset_mock();
@@ -101,36 +101,36 @@ if(($argv[1]??'')==='missing-credentials'){
  foreach($GLOBALS['http'] as $request)ok($request['args']['redirection']===0&&$request['args']['reject_unsafe_urls']===true&&$request['args']['sslverify']===true,'safe HTTP options');
  ok($GLOBALS['http'][0]['url']==='https://api-sandbox.xiaoman.cn/v1/oauth2/access_token','only OAuth post');
  ok($GLOBALS['http'][1]['url']==='https://api-sandbox.xiaoman.cn/v1/company/fields/selector?field=origin'&&$GLOBALS['http'][2]['url']==='https://api-sandbox.xiaoman.cn/v1/lead/fields?type=lead','only fixed metadata GETs');
- ok(count($r['��Դ����'])===1&&$r['��Դ����'][0]['��Դ���']==='46500000000000','entries origin metadata extracted');
- ok(count($r['����ӳ���ֶ�'])===2,'only requested lead fields');
- foreach(array('MOCK-TOKEN-67EF','MOCK-CLIENT-92AB','MOCK-SECRET-45CD','PRIVATE_RAW','PRIVATE_CUSTOMER','PRIVATE_CONTACT','�ͻ�����') as $secret)ok(!str_contains($encoded,$secret),'secret or irrelevant data removed');
- $ext=json_decode($r['����ӳ���ֶ�'][0]['ѡ������'],true);ok(isset($ext['enumchoices'][0]['name'])&&str_contains($ext['enumchoices'][0]['name'],'�泵'),'encoded unknown enum schema preserved');
- ok($ext['access_token']==='[������]'&&$ext['customers']==='[������]','sensitive nested keys redacted');case_done('management-only metadata and redaction');
+ ok(count($r['来源配置'])===1&&$r['来源配置'][0]['来源编号']==='46500000000000','entries origin metadata extracted');
+ ok(count($r['线索映射字段'])===2,'only requested lead fields');
+ foreach(array('MOCK-TOKEN-67EF','MOCK-CLIENT-92AB','MOCK-SECRET-45CD','PRIVATE_RAW','PRIVATE_CUSTOMER','PRIVATE_CONTACT','客户邮箱') as $secret)ok(!str_contains($encoded,$secret),'secret or irrelevant data removed');
+ $ext=json_decode($r['线索映射字段'][0]['选项配置'],true);ok(isset($ext['enumchoices'][0]['name'])&&str_contains($ext['enumchoices'][0]['name'],'叉车'),'encoded unknown enum schema preserved');
+ ok($ext['access_token']==='[已隐藏]'&&$ext['customers']==='[已隐藏]','sensitive nested keys redacted');case_done('management-only metadata and redaction');
  reset_mock();$GLOBALS['mode']='origin-actual';$before=$GLOBALS['option'];$r=XI_Config::inspect_configuration();$encoded=wp_json_encode($r,JSON_UNESCAPED_UNICODE);
- ok(count($r['��Դ����'])===59,'actual origin_id/origin_name list extracted');
- ok($r['��Դ����'][0]['��Դ���']==='99000000000000'&&$r['��Դ����'][58]['��Դ���']==='99000000000058','all actual-shape records retained');
+ ok(count($r['来源配置'])===59,'actual origin_id/origin_name list extracted');
+ ok($r['来源配置'][0]['来源编号']==='99000000000000'&&$r['来源配置'][58]['来源编号']==='99000000000058','all actual-shape records retained');
  foreach(array('MOCK-SECRET-45CD','MOCK-TOKEN-67EF','MOCK-CLIENT-92AB','PRIVATE_RAW') as $private)ok(!str_contains($encoded,$private),'actual-shape values redacted and extra metadata excluded');
  ok(count($GLOBALS['http'])===3&&$GLOBALS['option']===$before&&$GLOBALS['writes']===array(),'actual-shape inspection remains read-only');
  ok($GLOBALS['cache_deletes']===array()&&$GLOBALS['cache_reads']===array()&&$GLOBALS['cache_writes']===array(),'actual-shape inspection leaves lead token untouched');case_done('actual observed origin response shape');
- $pairs=XI_Config::configuration_origins(array('node'=>array(array('origin_id'=>'99','origin_name'=>'�����','id'=>'999','name'=>'�����'),array('origin_id'=>'�������','name'=>'�����'),array('origin_name'=>'��������','id'=>'�����'),array('origin_id'=>'�������','id'=>'legacy-id','name'=>'�ɼ���'),array('origin_id'=>array(),'origin_name'=>'��Ч','value'=>'select-id','label'=>'ѡ�����'))),array());
+ $pairs=XI_Config::configuration_origins(array('node'=>array(array('origin_id'=>'99','origin_name'=>'新配对','id'=>'999','name'=>'旧配对'),array('origin_id'=>'孤立编号','name'=>'不混合'),array('origin_name'=>'孤立名称','id'=>'不混合'),array('origin_id'=>'孤立编号','id'=>'legacy-id','name'=>'旧兼容'),array('origin_id'=>array(),'origin_name'=>'无效','value'=>'select-id','label'=>'选项兼容'))),array());
  ok(count($pairs)===3,'incomplete origin pairs never mix with legacy keys');
- ok($pairs[0]===array('��Դ���'=>'99','��Դ����'=>'�����'),'complete origin pair takes priority');
- ok($pairs[1]===array('��Դ���'=>'legacy-id','��Դ����'=>'�ɼ���'),'legacy id/name fallback retained');
- ok($pairs[2]===array('��Դ���'=>'select-id','��Դ����'=>'ѡ�����'),'legacy value/label fallback and recursion retained');case_done('paired precedence and legacy fallback');
+ ok($pairs[0]===array('来源编号'=>'99','来源名称'=>'新配对'),'complete origin pair takes priority');
+ ok($pairs[1]===array('来源编号'=>'legacy-id','来源名称'=>'旧兼容'),'legacy id/name fallback retained');
+ ok($pairs[2]===array('来源编号'=>'select-id','来源名称'=>'选项兼容'),'legacy value/label fallback and recursion retained');case_done('paired precedence and legacy fallback');
  foreach(array('auth-error','exception','auth-redirect','bad-token','metadata-error') as $scenario){reset_mock();$GLOBALS['mode']=$scenario;$r=XI_Config::inspect_configuration();$out=is_wp_error($r)?$r->get_error_message():wp_json_encode($r);foreach(array('MOCK-SECRET','MOCK-TOKEN','PRIVATE_RAW','untrusted.invalid') as $s)ok(!str_contains($out,$s),'fixed safe error');ok(count($GLOBALS['http'])===($scenario==='metadata-error'?3:1),'bounded failure requests: '.$scenario.' count='.count($GLOBALS['http']));}
  case_done('network exception redirect and API failure safety');
  reset_mock();$GLOBALS['can_manage']=false;$r=XI_Config::inspect_configuration();ok(is_wp_error($r)&&count($GLOBALS['http'])===0,'method permission gate');try{XI_Config::inspect_page();}catch(TestDie $e){ok($e->response===403,'handler permission 403');}ok($GLOBALS['nocache']===1&&count($GLOBALS['nonce_checks'])===0,'nocache before unauthorized response');case_done('capability gate');
  reset_mock();$GLOBALS['nonce_valid']=false;try{XI_Config::inspect_page();}catch(TestDie $e){ok($e->response===403,'nonce failure');}ok(count($GLOBALS['http'])===0&&$GLOBALS['nonce_checks']===array('xi_config_inspect'),'nonce before HTTP');case_done('nonce gate');
- reset_mock();try{XI_Config::inspect_page();}catch(TestDie $e){ok($e->response===200&&str_contains($e->getMessage(),'����С��ѯ������'),'read-only result page');ok(!str_contains($e->getMessage(),'MOCK-SECRET-45CD'),'HTML result redacted');}ok($GLOBALS['nocache']===1&&$GLOBALS['writes']===array(),'result page not cached or saved');case_done('result rendering');
+ reset_mock();try{XI_Config::inspect_page();}catch(TestDie $e){ok($e->response===200&&str_contains($e->getMessage(),'返回小满询盘设置'),'read-only result page');ok(!str_contains($e->getMessage(),'MOCK-SECRET-45CD'),'HTML result redacted');}ok($GLOBALS['nocache']===1&&$GLOBALS['writes']===array(),'result page not cached or saved');case_done('result rendering');
  reset_mock();$r=XI_Config::configuration_get('https://evil.invalid','/v1/lead/fields?type=lead','x');ok(is_wp_error($r)&&count($GLOBALS['http'])===0,'helper base gate');$r=XI_Config::configuration_get('https://api-sandbox.xiaoman.cn','/v1/lead/list','x');ok(is_wp_error($r)&&count($GLOBALS['http'])===0,'helper endpoint gate');case_done('helper allowlists');
- reset_mock();save_post();$r=invoke_save();ok($r===true&&count($GLOBALS['writes'])===1,'valid save');$saved=$GLOBALS['option'];ok($saved['origin_id']==='46500000000000'&&$saved['product_field']==='14206903842368'&&$saved['level_field']==='19675841541642','ID fields preserved');ok($saved['secrets']===array('id'=>'existing-encrypted-id','secret'=>'existing-encrypted-secret'),'blank credentials preserved');ok($saved['products']===array('forklift'=>'���Ͳ泵')&&$saved['field_aliases']===array('email'=>'F5'),'mapping fields retained');ok($saved['taxonomies']===array('product-category'),'taxonomy filtering retained');ok($saved['enabled']===false&&$saved['crm']===false&&$saved['capture_enabled']===false&&$saved['ads_enabled']===false,'other switches retained');case_done('save compatibility');
+ reset_mock();save_post();$r=invoke_save();ok($r===true&&count($GLOBALS['writes'])===1,'valid save');$saved=$GLOBALS['option'];ok($saved['origin_id']==='46500000000000'&&$saved['product_field']==='14206903842368'&&$saved['level_field']==='19675841541642','ID fields preserved');ok($saved['secrets']===array('id'=>'existing-encrypted-id','secret'=>'existing-encrypted-secret'),'blank credentials preserved');ok($saved['products']===array('forklift'=>'柴油叉车')&&$saved['field_aliases']===array('email'=>'F5'),'mapping fields retained');ok($saved['taxonomies']===array('product-category'),'taxonomy filtering retained');ok($saved['enabled']===false&&$saved['crm']===false&&$saved['capture_enabled']===false&&$saved['ads_enabled']===false,'other switches retained');case_done('save compatibility');
  reset_mock();save_post(array('api'=>''));ok(invoke_save()===true&&$GLOBALS['option']['api']===''&&$GLOBALS['option']['enabled']===false,'empty API saved while off');case_done('empty API while disabled');
  reset_mock();save_post(array('api'=>'','enabled'=>'1'));$r=invoke_save();ok($r instanceof TestDie&&$GLOBALS['writes']===array(),'cannot enable empty API');case_done('empty API enable blocked');
  reset_mock();save_post(array('api'=>'https://api-sandbox.xiaoman.cn:443'));$r=invoke_save();ok($r instanceof TestDie&&$GLOBALS['writes']===array(),'invalid API fails before persistence');case_done('save invalid API rejected');
  reset_mock();save_post(array('api'=>'https://api.xiaoman.cn'));$r=invoke_save();ok($r instanceof TestDie&&$GLOBALS['writes']===array(),'unverified hostname cannot be saved');$r=XI_Config::configuration_get('https://api.xiaoman.cn','/v1/lead/fields?type=lead','x');ok(is_wp_error($r)&&$GLOBALS['http']===array(),'unverified hostname cannot receive requests');case_done('unverified hostname rejected');
  reset_mock();save_post(array('origin_id'=>'bad'));ok(invoke_save() instanceof TestDie&&$GLOBALS['writes']===array(),'existing ID validation retained');case_done('existing ID validation');
  reset_mock();$GLOBALS['import_profile']=array_merge($GLOBALS['option'],array('enabled'=>false,'api'=>'https://api-sandbox.xiaoman.cn','migration'=>array('from'=>'legacy')));$_POST=array('import_legacy'=>'1');ok(invoke_save()===true&&$GLOBALS['imports']===1&&$GLOBALS['option']['migration']===array('from'=>'legacy'),'legacy import path preserved');case_done('legacy import');
- reset_mock();XI_Config::boot();ok(isset($GLOBALS['hooks']['admin_post_xi_config_inspect']),'admin-post handler registered');ob_start();XI_Config::page();$page=ob_get_clean();ok(str_contains($page,'name="api"')&&str_contains($page,'С���ٷ��ӿڣ���ʽ��')&&!str_contains($page,'ɳ�л���')&&!str_contains($page,'https://api.xiaoman.cn')&&str_contains($page,'xi_config_inspect')&&str_contains($page,'�ͻ��˱��')&&str_contains($page,'ֻ���˶�С����Դ���ֶ�'),'Chinese controls rendered while off');ok(!str_contains($page,'MOCK-SECRET-45CD')&&!str_contains($page,'MOCK-CLIENT-92AB'),'credentials never prefilled');case_done('management UI');
+ reset_mock();XI_Config::boot();ok(isset($GLOBALS['hooks']['admin_post_xi_config_inspect']),'admin-post handler registered');ob_start();XI_Config::page();$page=ob_get_clean();ok(str_contains($page,'name="api"')&&str_contains($page,'小满官方接口（正式）')&&!str_contains($page,'沙盒环境')&&!str_contains($page,'https://api.xiaoman.cn')&&str_contains($page,'xi_config_inspect')&&str_contains($page,'客户端编号')&&str_contains($page,'只读核对小满来源与字段'),'Chinese controls rendered while off');ok(!str_contains($page,'MOCK-SECRET-45CD')&&!str_contains($page,'MOCK-CLIENT-92AB'),'credentials never prefilled');case_done('management UI');
 
 // CRM toggle exercises the real settings save entry point with rendered-form values.
 function complete_form_from_saved($config){
@@ -201,7 +201,7 @@ foreach(array(false,true) as $state){
  ok(count($match)===2,'one CRM checkbox rendered');
  ok(substr_count($html,'name="crm_enabled"')===1&&str_contains($match[1],'checked="checked"')===$state,'checkbox matches persisted CRM flag');
  ok(substr_count($html,'name="crm_control_v1"')===1&&str_contains($html,'<input type="hidden" name="crm_control_v1" value="1">'),'one new form marker accompanies CRM checkbox');
- ok(str_contains($html,'����С��ͬ��')&&str_contains($html,'����;����������')&&str_contains($html,'��˼�¼����'),'pause limits visible');
+ ok(str_contains($html,'允许小满同步')&&str_contains($html,'已在途请求可能完成')&&str_contains($html,'审核记录保留'),'pause limits visible');
  ok(!str_contains($html,'MOCK-SECRET-45CD')&&!str_contains($html,'MOCK-CLIENT-92AB')&&!str_contains($html,'existing-encrypted-secret'),'no credential values rendered');
 }
 case_done('CRM UI reflects saved state and exposes no credentials');
