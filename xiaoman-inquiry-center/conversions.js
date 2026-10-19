@@ -1,8 +1,9 @@
-/* REVIEW CANDIDATE ONLY. Paired PHP required. Unknown outcomes never replay; callbacks are local tag processing evidence. */
+/* Paired PHP required. Unknown outcomes never replay; callbacks are local tag processing evidence. */
 (function(root,factory){'use strict';var api=factory();if(typeof module==='object'&&module.exports)module.exports=api;else api.start(root);})(typeof window!=='undefined'?window:null,function(){
  'use strict';
  function granted(w,name){try{var v=name&&w.consentApi.consentSync(name);return !!(v&&v.cookie&&v.consentGiven&&v.cookieOptIn);}catch(_){return false;}}
- function consent(w,c){return {analytics_storage:granted(w,c.analytics_service)?'granted':'denied',ad_storage:granted(w,c.ads_service)?'granted':'denied',ad_user_data:granted(w,c.user_data_service)?'granted':'denied',ad_personalization:'denied'};}
+ function purposeSnapshot(w,c){try{var bridge=w.XIPurposeConsent;return bridge&&bridge.protocol==='gtm-purpose-v1'&&typeof bridge.read==='function'?bridge.read(c.gtm_id):null;}catch(_){return null;}}
+ function consent(w,c){var p=c.purpose_consent_enabled===true?(purposeSnapshot(w,c)||{}):{analytics_storage:'granted',ad_storage:'granted',ad_user_data:'granted'};return {analytics_storage:p.analytics_storage==='granted'&&granted(w,c.analytics_service)?'granted':'denied',ad_storage:p.ad_storage==='granted'&&granted(w,c.ads_service)?'granted':'denied',ad_user_data:p.ad_user_data==='granted'&&granted(w,c.user_data_service)?'granted':'denied',ad_personalization:'denied'};}
  function contact(href){try{var u=new URL(href);if(u.protocol==='mailto:')return 'email_click';if(u.protocol==='https:'&&((u.hostname==='wa.me'&&/^\/[0-9]+\/?$/.test(u.pathname))||(u.hostname==='api.whatsapp.com'&&/^\/send\/?$/.test(u.pathname))))return 'whatsapp_click';}catch(_){}return '';}
  function start(w){
   if(!w||!w.XIConversionConfig)return;var c=w.XIConversionConfig;
@@ -17,7 +18,7 @@
    var names=[c.pending_storage_service];if(channel==='ads')names.push(c.pending_ads_storage_service);
    return names.filter(function(name,index){return typeof name==='string'&&name&&names.indexOf(name)===index;});
   }
-  function serviceState(name){try{var v=w.consentApi.consentSync(name);if(!v||!v.cookie||!v.consentGiven)return 'pending';return v.cookieOptIn?'granted':'denied';}catch(_){return 'pending';}}
+  function serviceState(name){try{var v=w.consentApi.consentSync(name);if(!v||!v.cookie||!v.consentGiven)return 'pending';if(!v.cookieOptIn)return 'denied';if(c.purpose_consent_enabled!==true)return 'granted';var purpose=name===c.pending_storage_service?'analytics_storage':name===c.pending_ads_storage_service?'ad_storage':'';if(!purpose)return 'disabled';var p=purposeSnapshot(w,c);return !p?'pending':p[purpose]==='granted'?'granted':'denied';}catch(_){return 'pending';}}
   function storageState(channel){var names=storageNames(channel);if(!names.length)return 'disabled';var states=names.map(serviceState);return states.indexOf('granted')!==-1?'granted':states.indexOf('pending')!==-1?'pending':'denied';}
   function canReadStorage(){return storageState('ga4')==='granted'||storageState('ads')==='granted';}
   function validNumber(number){return c.number_prefix&&number.indexOf(c.number_prefix)===0&&/^[1-9][0-9]*$/.test(number.slice(c.number_prefix.length));}
@@ -172,7 +173,11 @@
   w.XIConversions={consents:function(){return consent(w,c);},status:function(){return Object.keys(contexts).map(function(number){var ctx=contexts[number];return {inquiry_id:number,ga4:ctx.jobs.ga4.phase||'pending',ads:ctx.jobs.ads.phase||'pending'};});}};
   d.addEventListener('click',function(e){var a=e.target&&e.target.closest&&e.target.closest('a[href]');if(!a)return;scrubLink(a);var name=contact(a.href);if(!name||typeof w.gtag!=='function')return;var state=consent(w,c);if(state.analytics_storage==='granted'&&/^G-[A-Z0-9]+$/.test(c.ga4_id))w.gtag('event',name,{send_to:c.ga4_id,contact_type:name==='email_click'?'email':'whatsapp'});var label=name==='email_click'?c.email_label:c.whatsapp_label;if(state.ad_storage==='granted'&&/^AW-[0-9]+$/.test(c.ads_id)&&/^[A-Za-z0-9_-]+$/.test(label||''))w.gtag('event','conversion',{send_to:c.ads_id+'/'+label});},true);
   w.addEventListener('pagehide',function(){closed=true;});w.addEventListener('pageshow',function(){closed=false;formLocks.forEach(function(item){if(item.ctx.navigated){item.buttons.forEach(function(button){button.disabled=false;});if(item.form)item.form.dataset.submitting='false';}else if(item.ctx.resume)item.ctx.resume();});reconcile();});
-  d.addEventListener('DOMContentLoaded',reconcile);d.addEventListener('rcb-consent-changed',reconcile);d.addEventListener('bricks/form/success',formSend);reconcile();
+  d.addEventListener('DOMContentLoaded',reconcile);d.addEventListener('rcb-consent-changed',reconcile);d.addEventListener('xi-purpose-consent-changed',reconcile);
+  // Real RCB 5.x service changes can leave shared Google purposes unchanged.
+  // Coalesce its three native events and re-read after vendor state updates.
+  var consentReconcileScheduled=false;function scheduleConsentReconcile(){if(consentReconcileScheduled)return;consentReconcileScheduled=true;w.setTimeout(function(){consentReconcileScheduled=false;reconcile();},0);}
+  ['RCB/Apply/Interactive','RCB/OptIn','RCB/OptOut'].forEach(function(name){d.addEventListener(name,scheduleConsentReconcile);});d.addEventListener('bricks/form/success',formSend);reconcile();
   var p=new URLSearchParams(w.location.search),thank=Array.isArray(c.thank_you_routes)&&c.thank_you_routes.indexOf(w.location.pathname.replace(/\/+$/,'')+'/')!==-1&&p.get('form')==='quick_quote';
   if(thank){timer=w.setInterval(reconcile,1000);w.setTimeout(function(){w.clearInterval(timer);timer=null;closed=true;clearRecovery();},30*60000);}
  }

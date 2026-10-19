@@ -1,0 +1,11 @@
+'use strict';
+const test=require('node:test'),assert=require('node:assert/strict');
+const conversion=require('../xiaoman-inquiry-center/conversions.js');
+const c={gtm_id:'GTM-FIXTURE',analytics_service:'ga',ads_service:'ads',user_data_service:'ec'};
+const granted={analytics_storage:'granted',ad_storage:'granted',ad_user_data:'granted',ad_personalization:'denied'};
+const denied={analytics_storage:'denied',ad_storage:'denied',ad_user_data:'denied',ad_personalization:'denied'};
+const window=()=>({consentApi:{consentSync:()=>({cookie:{},consentGiven:true,cookieOptIn:true})}});
+test('absent and explicit false mode retain original service contract without a purpose reader',()=>{for(const mode of [undefined,false])assert.deepEqual(conversion.consent(window(),{...c,purpose_consent_enabled:mode}),granted);});
+test('explicit purpose mode denies missing reader despite service grants',()=>assert.deepEqual(conversion.consent(window(),{...c,purpose_consent_enabled:true}),denied));
+test('service mode ignores an unrelated purpose bridge instead of migrating consent implicitly',()=>{const w=window();w.XIPurposeConsent={protocol:'gtm-purpose-v1',read:()=>denied};assert.deepEqual(conversion.consent(w,c),granted);});
+test('purpose mode uses live reader on every snapshot',()=>{const w=window();let states=granted;w.XIPurposeConsent={protocol:'gtm-purpose-v1',read:()=>states};const config={...c,purpose_consent_enabled:true};assert.deepEqual(conversion.consent(w,config),granted);states=denied;assert.deepEqual(conversion.consent(w,config),denied);});

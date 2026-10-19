@@ -7,6 +7,7 @@ final class XI_Native_Xiaoman_Sync {
  const GROUP='xiaoman-xiaoman';
  const PAGE='xiaoman-inquiry-sync';
  const CURSOR=XI_QUEUE_CURSOR;
+ static function crm_enabled() { return !empty(XI_Config::get()['crm']); }
  static function boot() {
   
   add_action('init',array(__CLASS__,'setup'),25);
@@ -21,6 +22,7 @@ final class XI_Native_Xiaoman_Sync {
  }
  static function authorize_history($id) {
   if(!current_user_can('manage_options')) return false;
+  if(!self::crm_enabled()) return false;
   $id=absint($id);$saved=XI_Native_Inquiry_Center::row($id);
   if(!$saved || !XI_Native_Inquiry_Center::record($saved) || XI_Native_Inquiry_Trash::has($id)) return false;
   if(self::row($id)) return true;
@@ -64,6 +66,8 @@ final class XI_Native_Xiaoman_Sync {
   return !is_wp_error($index)&&$index&&self::set($id,array('index_id'=>$index));
  }
  static function capture($id) {
+  // False keeps a recovery pass from advancing its cursor while CRM is paused.
+  if(!self::crm_enabled()) return false;
   global $wpdb; $insert=$wpdb->insert_id;
   try {
    $id=absint($id); if(XI_Native_Inquiry_Trash::has($id)) return true;
@@ -90,16 +94,19 @@ final class XI_Native_Xiaoman_Sync {
   return true;
  }
  static function enqueue($id,$delay=0) {
+  if(!self::crm_enabled()) return;
   if(!function_exists('as_enqueue_async_action')) return;
   if($delay) as_schedule_single_action(time()+$delay,self::JOB,array((int)$id),self::GROUP,true);
   else as_enqueue_async_action(self::JOB,array((int)$id),self::GROUP,true);
  }
  static function retry($id,$attempt,$detail) {
+  if(!self::crm_enabled()) return;
   if($attempt>=4) { self::set($id,array('status'=>'failed','detail'=>$detail.'；自动重试已用完'));return; }
   $delays=array(1=>60,2=>300,3=>1800);$delay=$delays[$attempt]??1800;
   if(self::set($id,array('status'=>'retry','detail'=>$detail,'next_at'=>time()+$delay))) self::enqueue($id,$delay);
  }
  static function send($id) {
+  if(!self::crm_enabled()) return;
   $id=absint($id); $lock=XI_QUEUE_PREFIX.'lock_v1_'.$id;
   if(!add_option($lock,time(),'',false)) return;
   try {
@@ -134,6 +141,7 @@ final class XI_Native_Xiaoman_Sync {
   finally {delete_option($lock);}
  }
  static function recover() {
+  if(!self::crm_enabled()) return;
   if(!XI_Native_Inquiry_Center::exists()) return;
   global $wpdb;$cursor=get_option(self::CURSOR,null);if($cursor===null)return;
   $rows=$wpdb->get_results($wpdb->prepare('SELECT * FROM '.XI_Native_Inquiry_Center::table().' WHERE id>%d ORDER BY id ASC LIMIT 100',(int)$cursor),ARRAY_A);
@@ -160,6 +168,7 @@ final class XI_Native_Xiaoman_Sync {
  }
  static function resolve($id,$lead_id,$review){
   if(!current_user_can('manage_options'))return new WP_Error('permission','没有核对权限。');
+  if(!self::crm_enabled())return new WP_Error('crm_paused','小满同步已暂停，请先启用 CRM 同步。');
   $id=absint($id);$review=XI_Xiaoman_Queue_V1::text($review,500);
   if($review==='')return new WP_Error('review','请填写小满核对结果。');
   if($lead_id!==''&&!preg_match('/^[1-9][0-9]*$/D',$lead_id))return new WP_Error('lead','小满线索 ID 格式无效。');
@@ -177,7 +186,9 @@ final class XI_Native_Xiaoman_Sync {
  static function menu() {add_submenu_page(XI_Native_Inquiry_Center::PAGE,'小满询盘同步','小满询盘同步','manage_options',self::PAGE,array(__CLASS__,'page'));}
  static function page() {
   if(!current_user_can('manage_options')) wp_die('没有权限',403);
-  if(($_SERVER['REQUEST_METHOD']??'')==='POST') {
+  if(($_SERVER['REQUEST_METHOD']??'')==='POST' && !self::crm_enabled()) {
+   echo '<div class="notice notice-warning"><p>小满同步已暂停，任务和原生询盘已保留。请先启用 CRM 同步再执行操作。</p></div>';
+  } elseif(($_SERVER['REQUEST_METHOD']??'')==='POST') {
    if(isset($_POST['backfill_id'])) {
     check_admin_referer('xi_backfill');$raw=trim((string)wp_unslash($_POST['backfill_id']));
     if(preg_match('/^(?:'.preg_quote(XI_PROFILE['number_prefix'],'/').')?([1-9][0-9]*)$/iD',$raw,$m) && self::authorize_history($m[1]))
