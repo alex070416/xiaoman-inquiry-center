@@ -21,6 +21,8 @@ jobs:
       - run: php -n tests/privacy-routing.test.php
       - run: php tests/owner-protocol.test.php
       - run: php tests/schema-rolling.test.php
+      - run: php tests/analysis-query.test.php
+      - run: php tests/mcp-readonly.test.php
       - run: for site in fangwei huajing anxing rongfeng tongqu; do php tests/compatibility.test.php "$site" || exit 1; done
   frontend:
     runs-on: ubuntu-latest
