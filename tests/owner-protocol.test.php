@@ -15,7 +15,7 @@ class XI_Native_Inquiry_Center {
  static function number($id){return 'FW-N'.$id;}
  static function thank_you_url($record){return 'https://fixture.example.invalid/thank-you/';}
  static function row($id){return in_array((int)$id,array(7,8,9),true)?array('id'=>(int)$id):null;}
- static function record($row){return array('uuid'=>'fixture-request-uuid','values'=>array());}
+ static function record($row){return array('uuid'=>'fixture-request-uuid','values'=>($GLOBALS['fixture_values']??array()));}
 }
 class FixtureWpdb {
  public $prefix='fixture_';public PDO $db;public $before_query=null;public $external_lock=false;public $lock_held=false;
