@@ -205,14 +205,20 @@ final class XIFR_Conditional_Required {
 
  static function campaigns($submitted) {
   $values = array();
-  $direct = self::request_value($submitted, 'xifr_campaign');
-  if ($direct !== '') $values[] = $direct;
-  $packet = self::request_value($submitted, 'xi_context');
-  if ($packet !== '' && strlen($packet) <= 24000) {
+  // RF/HJ and the reviewed FW client use nifr_*; FW's packet is fwxm_context.
+  // These are current submission fields, not permission to read retained history.
+  foreach (array('xifr_campaign', 'nifr_campaign') as $key) {
+   $direct = self::request_value($submitted, $key);
+   if ($direct !== '') $values[] = $direct;
+  }
+  foreach (array('xi_context', 'fwxm_context', 'nixm_context') as $key) {
+   $packet = self::request_value($submitted, $key);
+   if ($packet === '' || strlen($packet) > 24000) continue;
    $decoded = json_decode($packet, true);
    if (is_array($decoded) && is_scalar($decoded['A1'] ?? null)) $values[] = (string) $decoded['A1'];
    if (is_array($decoded) && is_array($decoded['_request'] ?? null)) {
-    $values[] = self::campaign_from_url((string) ($decoded['_request']['landing_ad_url'] ?? ''));
+    $landing = $decoded['_request']['landing_ad_url'] ?? null;
+    if (is_string($landing)) $values[] = self::campaign_from_url($landing);
    }
   }
   $values[] = self::campaign_from_url(wp_unslash($_SERVER['HTTP_REFERER'] ?? ''));
@@ -226,7 +232,9 @@ final class XIFR_Conditional_Required {
   $options = self::options();
   $fields = self::fields($settings);
   $submitted = $form->get_fields();
-  $required = self::verify_token(self::request_value($submitted, 'xifr_context')) || self::server_page_required($form,$submitted);
+  $required = false;
+  foreach (array('xifr_context', 'nifr_context') as $key) if (self::verify_token(self::request_value($submitted, $key))) { $required = true; break; }
+  $required = $required || self::server_page_required($form,$submitted);
   if (!$required) foreach (self::campaigns($submitted) as $campaign) if (self::campaign_matches($campaign)) { $required = true; break; }
   if (!$required) return $errors;
   $field_name = self::target_field_name($fields);
