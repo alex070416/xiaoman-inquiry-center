@@ -11,7 +11,7 @@ jobs:
     container: php:${{ matrix.php }}-cli
     steps:
       - uses: actions/checkout@v4
-      - run: apt-get update && apt-get install -y --no-install-recommends libsqlite3-dev libzip-dev && docker-php-ext-install pdo_sqlite zip
+      - run: apt-get update && apt-get install -y --no-install-recommends git libsqlite3-dev libzip-dev && docker-php-ext-install pdo_sqlite zip
       - run: find xiaoman-inquiry-center tools -name '*.php' -print0 | xargs -0 -n1 php -l
       - run: php tests/updater.test.php
       - run: php tests/build-release.test.php
