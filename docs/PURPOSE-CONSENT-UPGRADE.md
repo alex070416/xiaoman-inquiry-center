@@ -1,6 +1,6 @@
 # Purpose consent source integration
 
-This is a local source candidate. It is not approved for a stable Release or automatic updates. The plugin version remains beta.10; owned assets use the new `-purpose-v1` revision. The source change does not write site options or migrate consent during an upgrade.
+This is a source candidate for the universal beta.11 package, carrying forward the reviewed beta.10 purpose-consent integration. It is not approved for a stable Release or automatic updates. Owned assets retain their `-purpose-v1` revision because their runtime code is unchanged. The source change does not write site options or migrate consent during an upgrade. See [UNIVERSAL-PACKAGE-SOP.md](UNIVERSAL-PACKAGE-SOP.md) for the shared-package release and per-site acceptance gates.
 
 `purpose_consent_enabled` is a strict JSON boolean in the raw `xi_conversion_config_v1` option. An absent key keeps the shared source's service consent contract. Explicit `false` selects that contract. Explicit `true` requires the reviewed current-page Google-purpose reader as well as the declared service consent. Other types block enqueue and claims. `XI_Conversions::purpose_mode_status()` reports both raw key presence and mode; defaults alone cannot prove upgrade readiness.
 
