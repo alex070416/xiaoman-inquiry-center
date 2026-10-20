@@ -2,7 +2,7 @@
 /**
  * Plugin Name: 小满询盘中心
  * Description: Bricks 原生表单、询盘后台、条件留言、广告归因和小满同步统一管理。
- * Version: 2.0.0-beta.10
+ * Version: 2.0.0-beta.11
  * Requires at least: 6.9
  * Requires PHP: 8.2
  * Author: Site Operations
@@ -10,21 +10,22 @@
  * Update URI: https://github.com/alex070416/xiaoman-inquiry-center
  */
 if (!defined('ABSPATH')) exit;
-define('XI_VERSION','2.0.0-beta.10');
+define('XI_VERSION','2.0.0-beta.11');
 define('XI_FILE',__FILE__);
 require_once __DIR__.'/configuration.php';
 require_once __DIR__.'/compatibility.php';
 require_once __DIR__.'/cookies.php';
 require_once __DIR__.'/updater.php';
+require_once __DIR__.'/readiness.php';
 // Register the bundled library before plugins_loaded priority 0. AS selects the
 // highest compatible library when other plugins also bundle it.
 require_once __DIR__.'/vendor/action-scheduler/action-scheduler.php';
-XI_Config::boot(); XI_Updater::boot(); XI_Cookies::boot();
+XI_Config::boot(); XI_Updater::boot(); XI_Cookies::boot(); XI_Readiness::boot();
 // Permission restrictions remain effective during the migration preparation
 // state, including when an old kefu role stores administrator capabilities.
 add_filter('user_has_cap',array('XI_Compatibility','restrict_service_caps'),100,4);
 $xi_profile=XI_Config::get();
-if (!$xi_profile['enabled'] || XI_Compatibility::legacy_active()) return;
+if (!$xi_profile['enabled'] || ($xi_profile['migration']['status']??'')==='import_preparing' || XI_Compatibility::legacy_active()) return;
 define('XI_PROFILE',$xi_profile);
 define('XI_HOST',strtolower((string)wp_parse_url(home_url(),PHP_URL_HOST)));
 define('XI_API',$xi_profile['api']);

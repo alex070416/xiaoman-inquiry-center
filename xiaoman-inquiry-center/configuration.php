@@ -2,6 +2,9 @@
 if(!defined('ABSPATH'))exit;
 final class XI_Config {
  const OPTION='xi_config_v2';
+ private static $save_lock=null;
+ private static $save_connection=null;
+ private static $save_shutdown_registered=false;
  static function defaults(){return array('enabled'=>false,'crm'=>true,'api'=>'https://api-sandbox.xiaoman.cn','number_prefix'=>'XI-N','post_type'=>'products','taxonomies'=>array(),'record_meta'=>'xi_native_record','queue_prefix'=>'xi_','queue_cursor'=>'xi_capture_cursor_v1','queue_cpt'=>'xi_job','legacy_job'=>'','legacy_sweep'=>'','legacy_group'=>'','legacy_cap'=>'','legacy_role'=>'','consent_service'=>'xiaoman-inquiry-attribution','origin_id'=>'','origin_name'=>'','product_field'=>'','level_field'=>'','level_value'=>'','products'=>array(),'product_lead_names'=>array(),'equipment_labels'=>array(),'excluded_terms'=>array(),'field_aliases'=>array(),'secrets'=>array(),'migration'=>array());}
  static function get(){ $v=get_option(self::OPTION,array());return wp_parse_args(is_array($v)?$v:array(),self::defaults()); }
  static function credential($name){
@@ -33,12 +36,70 @@ final class XI_Config {
  static function notice(){if(!current_user_can('manage_options'))return;
   if(XI_Compatibility::legacy_active())echo '<div class="notice notice-warning"><p>小满统一插件处于配置准备状态。请导入并核对原配置、备份后停用旧询盘插件，再启用统一处理。</p></div>';
  }
+ private static function acquire_save_lock(){
+  global $wpdb;
+  if(self::$save_lock!==null)return false;
+  // Connection-scoped locks do not expire while a paused request still owns
+  // its connection. Disconnects release them; unsupported databases fail shut.
+  $identity=(defined('DB_NAME')?DB_NAME:'').'|'.get_current_blog_id().'|'.$wpdb->options;
+  $name='xi_config_'.substr(hash('sha256',$identity),0,48);
+  if((string)$wpdb->get_var($wpdb->prepare('SELECT GET_LOCK(%s, 0)',$name))!=='1')return false;
+  self::$save_lock=$name;self::$save_connection=$wpdb->get_var('SELECT CONNECTION_ID()');
+  if(!self::$save_shutdown_registered){register_shutdown_function(array(__CLASS__,'release_save_lock'));self::$save_shutdown_registered=true;}
+  if(!self::owns_save_lock()){self::release_save_lock();return false;}
+  return true;
+ }
+ private static function owns_save_lock(){
+  global $wpdb;
+  return self::$save_lock!==null&&is_numeric(self::$save_connection)&&(string)$wpdb->get_var($wpdb->prepare('SELECT IF(IS_USED_LOCK(%s) = CONNECTION_ID() AND CONNECTION_ID() = %d, 1, 0)',self::$save_lock,self::$save_connection))==='1';
+ }
+ static function release_save_lock(){
+  if(self::$save_lock===null)return;
+  global $wpdb;
+  try{
+   // RELEASE_LOCK itself refuses another connection's ownership. The guard
+   // also prevents a reconnected request from releasing a successor's lock.
+   if(self::owns_save_lock()){
+    if((string)$wpdb->get_var($wpdb->prepare('SELECT RELEASE_LOCK(%s)',self::$save_lock))!=='1')return;
+   }
+   self::$save_lock=null;self::$save_connection=null;
+  }catch(Throwable $e){/* Shutdown can retry; closing the DB connection releases the lock. */}
+ }
+ private static function save_guard($expected,$option=self::OPTION){
+  global $wpdb;
+  if(!self::owns_save_lock())wp_die('配置保存连接或锁已改变，请重新核对后提交。','',array('response'=>409));
+  // Read the stored image directly: a request-local options cache may predate
+  // another administrator's save. Compare raw values, never merged defaults.
+  $stored=$wpdb->get_var($wpdb->prepare("SELECT option_value FROM {$wpdb->options} WHERE option_name=%s",$option));
+  if(($wpdb->last_error??'')!==''||($stored===null?null:maybe_unserialize($stored))!==$expected)wp_die('配置在本次核对期间发生改变，本次未覆盖；请重新载入并核对。','',array('response'=>409));
+  return $stored;
+ }
+ private static function save_option($option,$expected,$value,$failure){
+  global $wpdb;$before=self::save_guard($expected,$option);$next=(string)maybe_serialize($value);
+  // A reconnect can happen after any preceding SELECT. Test ownership and the
+  // original image inside the write statement, including first-time inserts.
+  if($before===null)$changed=$wpdb->query($wpdb->prepare("INSERT IGNORE INTO {$wpdb->options} (option_name, option_value, autoload) SELECT %s,%s,'no' WHERE IS_USED_LOCK(%s)=CONNECTION_ID() AND CONNECTION_ID()=%d",$option,$next,self::$save_lock,self::$save_connection));
+  else $changed=$wpdb->query($wpdb->prepare("UPDATE {$wpdb->options} SET option_value=%s, autoload='no' WHERE option_name=%s AND BINARY option_value=BINARY %s AND IS_USED_LOCK(%s)=CONNECTION_ID() AND CONNECTION_ID()=%d",$next,$option,$before,self::$save_lock,self::$save_connection));
+  if($changed===false||($changed===0&&$before!==$next)||!self::owns_save_lock())wp_die($failure);
+  // Mirror WordPress option-cache invalidation, including old autoloaded rows
+  // and negative caches. Never leave get_option() reading the previous image.
+  foreach(array($option,'notoptions','alloptions') as $cache)wp_cache_delete($cache,'options');
+  if(get_option($option,null)!==$value)wp_die($failure);
+ }
  static function save(){
+  if(($_SERVER['REQUEST_METHOD']??'')!=='POST')wp_die('请求方式错误。','',array('response'=>405));
   if(!current_user_can('manage_options'))wp_die('没有配置权限。', '', array('response'=>403));check_admin_referer('xi_config_save');
-  $c=self::get();
-  if(isset($_POST['import_legacy'])){
-   $c=XI_Compatibility::import_profile();
-   if(is_wp_error($c))wp_die(esc_html($c->get_error_message()));
+  if(!self::acquire_save_lock())wp_die('另一个配置保存正在进行，请稍后重新核对并提交。','',array('response'=>409));
+  try{self::save_locked(get_option(self::OPTION,null));}finally{self::release_save_lock();}
+ }
+ private static function save_locked($expected){
+  $c=self::get();$importing=isset($_POST['import_legacy']);$prepared=null;$required_expected=$importing?get_option('xi_required_v1',null):null;
+  if($importing){
+   $prepared=XI_Compatibility::prepare_import();
+   if(is_wp_error($prepared))wp_die(esc_html($prepared->get_error_message()));
+   $c=$prepared['config'];
+   $errors=XI_Readiness::profile_errors($c);
+   if($errors)wp_die('原配置检查未通过：'.esc_html(implode(', ',$errors)));
   } else {
    $api=self::api_base(wp_unslash($_POST['api']??$c['api']));if(is_wp_error($api))wp_die(esc_html($api->get_error_message()));$c['api']=$api;
    foreach(array('origin_id','product_field','level_field') as $key){$v=sanitize_text_field(wp_unslash($_POST[$key]??''));if($v!==''&&!preg_match('/^[1-9][0-9]*$/D',$v))wp_die('字段 ID 格式无效。');$c[$key]=$v;}
@@ -49,11 +110,25 @@ final class XI_Config {
    foreach(array('products','product_lead_names','equipment_labels','field_aliases') as $key){$raw=json_decode(wp_unslash($_POST[$key]??'{}'),true);if(!is_array($raw))wp_die('映射必须为有效 JSON 对象。');$c[$key]=array();foreach($raw as $k=>$v)if(is_string($k)&&is_string($v))$c[$key][sanitize_text_field($k)]=sanitize_text_field($v);}
    foreach(array('id','secret') as $key){$v=trim(wp_unslash($_POST['client_'.$key]??''));if($v!==''){$encrypted=self::encrypt($v);if(is_wp_error($encrypted))wp_die($encrypted->get_error_message());$c['secrets'][$key]=$encrypted;}}
    $c['enabled']=isset($_POST['enabled']);
+   if($c['enabled']&&($c['migration']['status']??'')==='import_preparing')wp_die('上次导入尚未完成，请先核对并重新完成导入，再启用统一处理。');
    if(($_POST['crm_control_v1']??null)==='1')$c['crm']=isset($_POST['crm_enabled'])&&$_POST['crm_enabled']==='1';
    if($c['enabled']&&XI_Compatibility::legacy_active())wp_die('请先备份并停用旧询盘插件，避免重复提交。');
   }
   $api=self::api_base($c['api'],!empty($c['enabled']));if(is_wp_error($api))wp_die(esc_html($api->get_error_message()));$c['api']=$api;
-  update_option(self::OPTION,$c,false);delete_transient('xi_lead_token_v1');
+  if($importing){
+   // Preparation is pure. Start persistence only after every build/API/profile check passes.
+   // A failed multi-option write remains visibly incomplete and cannot start the new core.
+   $c['enabled']=false;$c['migration']['status']='import_preparing';
+   self::save_option(self::OPTION,$expected,$c,'导入配置未能保存，统一处理保持关闭。请检查数据库后重试。');
+   $expected=$c;
+   if(is_array($prepared['required'])){
+    self::save_guard($expected);
+    self::save_option('xi_required_v1',$required_expected,$prepared['required'],'必填配置尚未保存完成，导入保持准备状态，统一处理未启用。');
+   }
+   $c['migration']['status']='imported';
+  }
+  self::save_option(self::OPTION,$expected,$c,$importing?'导入尚未完成，统一处理保持关闭。请核对已保存配置。':'配置未能保存，请核对数据库后重试；当前仍使用原配置。');
+  delete_transient('xi_lead_token_v1');
   wp_safe_redirect(admin_url('admin.php?page=xiaoman-inquiry-settings&updated=1'));exit;
  }
  static function configuration_text($value,$secrets){
@@ -133,7 +208,7 @@ final class XI_Config {
   if(!current_user_can('manage_options'))return;$c=self::get();
   echo '<div class="wrap"><h1>小满询盘中心 · '.esc_html(XI_VERSION).'</h1>';
   if(isset($_GET['updated']))echo '<div class="notice notice-success"><p>配置已保存。</p></div>';
-  echo '<p>Bricks 原生 Form → 本地保存 → 小满后台同步。请先完成配置核对再启用。</p><form method="post" action="'.esc_url(admin_url('admin-post.php')).'">';
+  echo '<p>Bricks 原生 Form → 本地保存 → 小满后台同步。请先完成配置核对再启用。</p><p><a href="'.esc_url(admin_url('admin.php?page=xiaoman-readiness')).'">统一配置检查（只读）</a>：核对本站身份、Cookie、Google 与队列准备度。</p><form method="post" action="'.esc_url(admin_url('admin-post.php')).'">';
   wp_nonce_field('xi_config_save');echo '<input type="hidden" name="action" value="xi_config_save"><table class="form-table">';
   echo '<tr><th>接口基地址</th><td><select name="api">';
   foreach(array(''=>'尚未配置','https://api-sandbox.xiaoman.cn'=>'小满官方接口（正式）') as $value=>$label)echo '<option value="'.esc_attr($value).'" '.selected($c['api'],$value,false).'>'.esc_html($label).'</option>';

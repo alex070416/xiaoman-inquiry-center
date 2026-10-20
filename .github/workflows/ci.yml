@@ -15,6 +15,8 @@ jobs:
       - run: find xiaoman-inquiry-center tools -name '*.php' -print0 | xargs -0 -n1 php -l
       - run: php tests/updater.test.php
       - run: php tests/build-release.test.php
+      - run: php tests/verify-release.test.php
+      - run: php tests/readiness.test.php
       - run: php -n tests/lead-date.test.php
       - run: php -n tests/assets-metadata.test.php
       - run: php -n tests/form-response.test.php
@@ -23,6 +25,7 @@ jobs:
       - run: php tests/schema-rolling.test.php
       - run: php tests/configuration-toggle.test.php
       - run: php tests/configuration-toggle.test.php missing-credentials
+      - run: php tests/configuration-lock.test.php
       - run: php tests/runtime-pause.test.php
       - run: php tests/enhanced-two-moments.test.php
       - run: php tests/purpose-mode-assets.test.php
@@ -32,6 +35,8 @@ jobs:
       - run: php tests/analysis-query.test.php
       - run: php tests/mcp-readonly.test.php
       - run: for site in fangwei huajing anxing rongfeng tongqu; do php tests/compatibility.test.php "$site" || exit 1; done
+      - run: php tests/compatibility.test.php fangwei stored-credentials
+      - run: php -d disable_functions=sodium_crypto_secretbox_open tests/compatibility.test.php fangwei missing-decrypt
   frontend:
     runs-on: ubuntu-latest
     steps:
@@ -43,4 +48,3 @@ jobs:
       - run: npm ci --ignore-scripts --omit=optional
       - run: npm test
       - run: node tests/purpose-helper.cjs
-

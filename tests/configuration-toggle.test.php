@@ -2,6 +2,7 @@
 // Local deterministic WordPress/HTTP mocks only. No network, customer or plugin runtime.
 define('ABSPATH',__DIR__);
 define('XI_VERSION','test');
+define('DB_NAME','synthetic_config_fixture');
 if(($argv[1]??'')!=='missing-credentials'){
  define('XIAOMAN_CLIENT_ID','MOCK-CLIENT-92AB');
  define('XIAOMAN_CLIENT_SECRET','MOCK-SECRET-45CD');
@@ -9,11 +10,46 @@ if(($argv[1]??'')!=='missing-credentials'){
 class WP_Error { public $code,$message; function __construct($c,$m){$this->code=$c;$this->message=$m;}function get_error_message(){return $this->message;} }
 class TestDie extends Exception { public $response;function __construct($message,$response){parent::__construct($message);$this->response=$response;} }
 class TestRedirect extends Exception {}
-class XI_Compatibility { static function legacy_active(){return $GLOBALS['legacy'];}static function import_profile(){$GLOBALS['imports']++;return $GLOBALS['import_profile'];} }
+class XI_Compatibility {
+ static function legacy_active(){return $GLOBALS['legacy'];}
+ static function prepare_import(){$GLOBALS['imports']++;return $GLOBALS['prepared_import']??array('config'=>$GLOBALS['import_profile'],'required'=>$GLOBALS['import_required']);}
+ static function import_profile(){$prepared=self::prepare_import();return is_wp_error($prepared)?$prepared:$prepared['config'];}
+}
+class XI_Readiness {static function profile_errors($c){$GLOBALS['profile_checks'][]=$c;return $GLOBALS['profile_errors'];}}
 class XI_Cookies {static function definitions(){return array();}static function status(){return array();}}
 function is_wp_error($v){return $v instanceof WP_Error;}
-function get_option($k,$d=false){return $k==='xi_config_v2'?$GLOBALS['option']:$d;}
+function get_option($k,$d=false){return $k==='xi_config_v2'?$GLOBALS['option']:($GLOBALS['other_options'][$k]??$d);}
 function wp_parse_args($v,$d){return array_merge($d,$v);}
+function get_current_blog_id(){return 1;}
+function maybe_serialize($v){return is_array($v)||is_object($v)?serialize($v):$v;}
+function maybe_unserialize($v){if(!is_string($v))return $v;$decoded=@unserialize($v);return $decoded!==false||$v==='b:0;'?$decoded:$v;}
+class XI_Config_Fixture_DB {
+ public $options='wp_options';
+ function prepare($sql,...$args){return array($sql,$args);}
+ function get_var($query){
+  $sql=is_array($query)?$query[0]:$query;$args=is_array($query)?$query[1]:array();$connection=$GLOBALS['config_connection'];
+  if($sql==='SELECT CONNECTION_ID()')return $connection;
+  if(str_contains($sql,'GET_LOCK(')){$key=$args[0];if(isset($GLOBALS['config_locks'][$key])&&$GLOBALS['config_locks'][$key]!==$connection)return 0;$GLOBALS['config_locks'][$key]=$connection;return 1;}
+  if(str_contains($sql,'IS_USED_LOCK('))return ($GLOBALS['config_locks'][$args[0]]??null)===$connection&&$connection===$args[1]?1:0;
+  if(str_contains($sql,'RELEASE_LOCK(')){$key=$args[0];if(($GLOBALS['config_locks'][$key]??null)!==$connection)return 0;unset($GLOBALS['config_locks'][$key]);return 1;}
+  $key=$args[0];return $key==='xi_config_v2'?maybe_serialize($GLOBALS['option']):(array_key_exists($key,$GLOBALS['other_options'])?maybe_serialize($GLOBALS['other_options'][$key]):null);
+ }
+ function query($query){
+  list($sql,$args)=$query;
+  if(str_starts_with($sql,'UPDATE ')){
+   list($value,$key,$prior,$lock,$connection)=$args;
+   if(($GLOBALS['config_locks'][$lock]??null)!==$GLOBALS['config_connection']||$connection!==$GLOBALS['config_connection']||maybe_serialize(get_option($key,null))!==$prior)return 0;
+   return update_option($key,maybe_unserialize($value),false)?1:0;
+  }
+  if(str_starts_with($sql,'INSERT IGNORE')){
+   list($key,$value,$lock,$connection)=$args;
+   if(($GLOBALS['config_locks'][$lock]??null)!==$GLOBALS['config_connection']||$connection!==$GLOBALS['config_connection']||get_option($key,null)!==null)return 0;
+   return update_option($key,maybe_unserialize($value),false)?1:0;
+  }
+  throw new RuntimeException('Unexpected synthetic configuration lock query');
+ }
+}
+$wpdb=new XI_Config_Fixture_DB();
 function current_user_can($cap){return $cap==='manage_options'&&$GLOBALS['can_manage'];}
 function wp_salt($v){return 'mock-salt';}
 function sanitize_text_field($v){return trim(strip_tags((string)$v));}
@@ -23,8 +59,16 @@ function wp_unslash($v){return $v;}
 function post_type_exists($v){return $v==='products';}
 function taxonomy_exists($v){return $v==='product-category';}
 function is_object_in_taxonomy($p,$t){return $p==='products'&&$t==='product-category';}
-function update_option($k,$v,$autoload){$GLOBALS['writes'][]=$k;$GLOBALS['option']=$v;}
+function update_option($k,$v,$autoload){
+ $GLOBALS['writes'][]=$k;
+ $GLOBALS['write_counts'][$k]=($GLOBALS['write_counts'][$k]??0)+1;
+ if(in_array($GLOBALS['write_counts'][$k],$GLOBALS['drop_writes'][$k]??array(),true))return false;
+ if(get_option($k,null)===$v)return false;
+ if($k==='xi_config_v2')$GLOBALS['option']=$v;else $GLOBALS['other_options'][$k]=$v;
+ return true;
+}
 function delete_transient($v){$GLOBALS['cache_deletes'][]=$v;}
+function wp_cache_delete($key,$group){$GLOBALS['option_cache_deletes'][]=array($key,$group);return true;}
 function set_transient($v,$x,$ttl){$GLOBALS['cache_writes'][]=$v;}
 function get_transient($v){$GLOBALS['cache_reads'][]=$v;return 'ordinary-lead-token';}
 function admin_url($p){return 'https://mock-wordpress.invalid/wp-admin/'.$p;}
@@ -77,7 +121,12 @@ $assertions=0;$cases=array();
 function ok($condition,$label){$GLOBALS['assertions']++;if(!$condition)throw new RuntimeException('ASSERTION: '.$label);}
 function reset_mock(){
  $GLOBALS['option']=array_merge(XI_Config::defaults(),array('enabled'=>false,'crm'=>false,'api'=>'https://api-sandbox.xiaoman.cn','capture_enabled'=>false,'ads_enabled'=>false,'secrets'=>array('id'=>'existing-encrypted-id','secret'=>'existing-encrypted-secret')));
- foreach(array('http','writes','cache_deletes','cache_writes','cache_reads','nonce_checks') as $k)$GLOBALS[$k]=array();
+ foreach(array('http','writes','cache_deletes','cache_writes','cache_reads','nonce_checks','drop_writes','write_counts','profile_errors','profile_checks','config_locks','option_cache_deletes') as $k)$GLOBALS[$k]=array();
+ $GLOBALS['other_options']=array('xi_required_v1'=>array('post_type'=>'products','field_name'=>'Previous required'));
+ $GLOBALS['import_required']=array('post_type'=>'products','field_name'=>'Message','campaign_codes'=>array('pm'),'categories'=>array('fixture'));
+ $GLOBALS['config_connection']=101;
+ unset($GLOBALS['prepared_import']);
+ $_SERVER['REQUEST_METHOD']='POST';
  $GLOBALS['mode']='ok';$GLOBALS['can_manage']=true;$GLOBALS['nonce_valid']=true;$GLOBALS['legacy']=false;$GLOBALS['nocache']=0;$GLOBALS['imports']=0;$_POST=array();
 }
 function case_done($name){$GLOBALS['cases'][]=$name;}
@@ -129,7 +178,7 @@ if(($argv[1]??'')==='missing-credentials'){
  reset_mock();save_post(array('api'=>'https://api-sandbox.xiaoman.cn:443'));$r=invoke_save();ok($r instanceof TestDie&&$GLOBALS['writes']===array(),'invalid API fails before persistence');case_done('save invalid API rejected');
  reset_mock();save_post(array('api'=>'https://api.xiaoman.cn'));$r=invoke_save();ok($r instanceof TestDie&&$GLOBALS['writes']===array(),'unverified hostname cannot be saved');$r=XI_Config::configuration_get('https://api.xiaoman.cn','/v1/lead/fields?type=lead','x');ok(is_wp_error($r)&&$GLOBALS['http']===array(),'unverified hostname cannot receive requests');case_done('unverified hostname rejected');
  reset_mock();save_post(array('origin_id'=>'bad'));ok(invoke_save() instanceof TestDie&&$GLOBALS['writes']===array(),'existing ID validation retained');case_done('existing ID validation');
- reset_mock();$GLOBALS['import_profile']=array_merge($GLOBALS['option'],array('enabled'=>false,'api'=>'https://api-sandbox.xiaoman.cn','migration'=>array('from'=>'legacy')));$_POST=array('import_legacy'=>'1');ok(invoke_save()===true&&$GLOBALS['imports']===1&&$GLOBALS['option']['migration']===array('from'=>'legacy'),'legacy import path preserved');case_done('legacy import');
+ reset_mock();$GLOBALS['import_profile']=array_merge($GLOBALS['option'],array('enabled'=>false,'api'=>'https://api-sandbox.xiaoman.cn','migration'=>array('from'=>'legacy','status'=>'imported')));$GLOBALS['option']=array();$_POST=array('import_legacy'=>'1');ok(invoke_save()===true&&$GLOBALS['imports']===1&&$GLOBALS['option']['migration']===array('from'=>'legacy','status'=>'imported'),'legacy import path preserved');ok($GLOBALS['other_options']['xi_required_v1']===$GLOBALS['import_required'],'complete legacy required settings saved after preparation');ok(count($GLOBALS['profile_checks'])===1&&$GLOBALS['http']===array(),'legacy identity validated without HTTP');case_done('legacy import');
  reset_mock();XI_Config::boot();ok(isset($GLOBALS['hooks']['admin_post_xi_config_inspect']),'admin-post handler registered');ob_start();XI_Config::page();$page=ob_get_clean();ok(str_contains($page,'name="api"')&&str_contains($page,'小满官方接口（正式）')&&!str_contains($page,'沙盒环境')&&!str_contains($page,'https://api.xiaoman.cn')&&str_contains($page,'xi_config_inspect')&&str_contains($page,'客户端编号')&&str_contains($page,'只读核对小满来源与字段'),'Chinese controls rendered while off');ok(!str_contains($page,'MOCK-SECRET-45CD')&&!str_contains($page,'MOCK-CLIENT-92AB'),'credentials never prefilled');case_done('management UI');
 
 // CRM toggle exercises the real settings save entry point with rendered-form values.
@@ -205,8 +254,51 @@ foreach(array(false,true) as $state){
  ok(!str_contains($html,'MOCK-SECRET-45CD')&&!str_contains($html,'MOCK-CLIENT-92AB')&&!str_contains($html,'existing-encrypted-secret'),'no credential values rendered');
 }
 case_done('CRM UI reflects saved state and exposes no credentials');
-reset_mock();$GLOBALS['import_profile']=array_merge($GLOBALS['option'],array('crm'=>true,'enabled'=>false,'migration'=>array('from'=>'legacy')));$_POST=array('import_legacy'=>'1','crm_enabled'=>array('forged'));
+reset_mock();$GLOBALS['import_profile']=array_merge($GLOBALS['option'],array('crm'=>true,'enabled'=>false,'migration'=>array('from'=>'legacy','status'=>'imported')));$GLOBALS['option']=array();$_POST=array('import_legacy'=>'1','crm_enabled'=>array('forged'));
 ok(invoke_save()===true&&$GLOBALS['option']===$GLOBALS['import_profile'],'legacy import ignores forged checkbox and preserves imported profile');
-case_done('legacy import branch unchanged');
+case_done('legacy import preserves mappings and ignores checkbox');
+
+foreach(array('legacy-build','invalid-api','invalid-profile') as $failure){
+ reset_mock();$before=$GLOBALS['option'];$required_before=$GLOBALS['other_options'];
+ $GLOBALS['import_profile']=array_merge($before,array('enabled'=>false,'migration'=>array('status'=>'imported')));
+ if($failure==='legacy-build')$GLOBALS['prepared_import']=new WP_Error('legacy_forms','Synthetic import failure');
+ elseif($failure==='invalid-api')$GLOBALS['import_profile']['api']='https://unverified.invalid';
+ else $GLOBALS['profile_errors']=array('queue_identity');
+ $_POST=array('import_legacy'=>'1');$r=invoke_save();
+ ok($r instanceof TestDie,'legacy preflight failure rejects save: '.$failure);
+ ok($GLOBALS['option']===$before&&$GLOBALS['other_options']===$required_before&&$GLOBALS['writes']===array(),'failed preparation leaves both saved options untouched: '.$failure);
+ ok($GLOBALS['http']===array()&&$GLOBALS['cache_deletes']===array(),'failed legacy preparation makes no HTTP and retains normal token: '.$failure);
+}
+case_done('legacy preparation API and identity failures have no partial writes');
+
+foreach(array('config-first','required','config-final') as $failure){
+ reset_mock();$GLOBALS['import_profile']=array_merge($GLOBALS['option'],array('enabled'=>false,'migration'=>array('status'=>'imported')));$GLOBALS['option']=array();
+ $GLOBALS['drop_writes']=$failure==='required'?array('xi_required_v1'=>array(1)):array('xi_config_v2'=>array($failure==='config-first'?1:2));
+ $_POST=array('import_legacy'=>'1');$r=invoke_save();
+ ok($r instanceof TestDie,'legacy persistence failure cannot redirect success: '.$failure);
+ ok(empty($GLOBALS['option']['enabled']),'legacy persistence failure keeps core disabled: '.$failure);
+ ok(($GLOBALS['option']['migration']['status']??'')!=='imported','partial storage never claims imported: '.$failure);
+ ok($GLOBALS['http']===array()&&$GLOBALS['cache_deletes']===array(),'failed persistence makes no HTTP and retains normal token: '.$failure);
+}
+case_done('legacy option write readback failures remain disabled and explicit');
+reset_mock();$GLOBALS['option']['migration']=array('status'=>'import_preparing','from'=>array('fixture/legacy.php'));$before=$GLOBALS['option'];$_POST=complete_form_from_saved($before);$_POST['enabled']='1';
+$r=invoke_save();
+ok($r instanceof TestDie,'incomplete legacy import cannot enable through ordinary settings');
+ok($GLOBALS['option']===$before&&$GLOBALS['writes']===array(),'blocked incomplete import retains the exact disabled profile');
+ok($GLOBALS['http']===array()&&$GLOBALS['cache_deletes']===array(),'blocked incomplete import makes no HTTP and retains normal token');
+case_done('ordinary settings cannot enable an incomplete import');
+reset_mock();$before=$GLOBALS['option'];$required_before=$GLOBALS['other_options'];$GLOBALS['drop_writes']=array('xi_config_v2'=>array(1));save_post(array('origin_name'=>'Changed synthetic source'));$r=invoke_save();
+ok($r instanceof TestDie,'ordinary settings write failure cannot redirect success');
+ok($GLOBALS['option']===$before&&$GLOBALS['other_options']===$required_before,'ordinary write failure retains existing configuration and required rules');
+ok($GLOBALS['http']===array()&&$GLOBALS['cache_deletes']===array(),'ordinary write failure makes no HTTP and retains normal token');
+case_done('ordinary settings reject failed persistence');
+reset_mock();$before=$GLOBALS['option'];$_POST=complete_form_from_saved($before);$r=invoke_save();
+ok($r===true&&$GLOBALS['option']===$before,'unchanged ordinary settings remain valid when update_option returns false');
+ok($GLOBALS['write_counts']['xi_config_v2']===1&&$GLOBALS['http']===array(),'unchanged save checks one write attempt without network');
+case_done('unchanged ordinary settings accept matching readback');
+reset_mock();$before=$GLOBALS['option'];$_POST=complete_form_from_saved($before);$_SERVER['REQUEST_METHOD']='GET';$r=invoke_save();
+ok($r instanceof TestDie,'settings save requires explicit POST');
+ok($GLOBALS['option']===$before&&$GLOBALS['writes']===array()&&$GLOBALS['config_locks']===array()&&$GLOBALS['http']===array(),'GET cannot acquire a lock or write settings');
+case_done('GET cannot trigger settings persistence');
 }
 echo wp_json_encode(array('result'=>'PASS','cases'=>count($cases),'assertions'=>$assertions,'coverage'=>$cases,'real_network'=>false,'provider_loaded'=>class_exists('XI_Xiaoman_Queue_V1',false),'xi_api_defined'=>defined('XI_API')),JSON_PRETTY_PRINT|JSON_UNESCAPED_UNICODE)."\n";
