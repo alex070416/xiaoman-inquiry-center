@@ -6,7 +6,7 @@ $profiles=array('fangwei'=>array('FW','fangwei-inquiry-center','fangwei-xiaoman-
 if(!isset($profiles[$site]))throw new RuntimeException('Unknown fixture');
 list($prefix,$folder,$entry,$number,$queue)=$profiles[$site];
 $fixture_id=(string)(array_search($site,array_keys($profiles),true)+1);
-$post_type=$site==='rongfeng'?'product':'products';$taxonomy=$site==='rongfeng'?'machine-types':'product-category';
+$post_type=$site==='rongfeng'?'product':'products';$taxonomy=$site==='rongfeng'?'machine-types':($site==='tongqu'?'Tractors':'product-category');
 $credentials_mode=$argv[2]??'constants';
 if(!in_array($credentials_mode,array('constants','stored-credentials','missing-decrypt'),true))throw new RuntimeException('Unknown credentials fixture');
 define('ABSPATH',__DIR__.'/');define('ARRAY_A','ARRAY_A');define('DAY_IN_SECONDS',86400);

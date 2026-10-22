@@ -25,7 +25,8 @@ final class XI_Readiness {
   if (!self::matches($c['post_type']??null, '/^[a-z][a-z0-9_-]{0,19}$/D') || !post_type_exists($c['post_type'])) $errors[] = 'post_type_missing';
   if (!is_array($c['taxonomies']??null)) $errors[] = 'taxonomies_invalid';
   else foreach ($c['taxonomies'] as $tax) {
-   if (!self::matches($tax, '/^[a-z][a-z0-9_-]{0,31}$/D') || !taxonomy_exists($tax) || !is_object_in_taxonomy($c['post_type']??'', $tax)) $errors[] = 'taxonomy_missing';
+   // WordPress keeps taxonomy keys case-sensitive; Tongqu registers "Tractors".
+   if (!self::matches($tax, '/^[A-Za-z][A-Za-z0-9_-]{0,31}$/D') || !taxonomy_exists($tax) || !is_object_in_taxonomy($c['post_type']??'', $tax)) $errors[] = 'taxonomy_missing';
   }
   foreach (array('origin_id', 'product_field', 'level_field') as $key) {
    $value=$c[$key]??'';

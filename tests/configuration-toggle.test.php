@@ -57,8 +57,8 @@ function sanitize_textarea_field($v){return trim(strip_tags((string)$v));}
 function sanitize_key($v){return preg_replace('/[^a-z0-9_\-]/','',strtolower($v));}
 function wp_unslash($v){return $v;}
 function post_type_exists($v){return $v==='products';}
-function taxonomy_exists($v){return $v==='product-category';}
-function is_object_in_taxonomy($p,$t){return $p==='products'&&$t==='product-category';}
+function taxonomy_exists($v){return in_array($v,array('product-category','Tractors'),true);}
+function is_object_in_taxonomy($p,$t){return $p==='products'&&in_array($t,array('product-category','Tractors'),true);}
 function update_option($k,$v,$autoload){
  $GLOBALS['writes'][]=$k;
  $GLOBALS['write_counts'][$k]=($GLOBALS['write_counts'][$k]??0)+1;
@@ -174,6 +174,7 @@ if(($argv[1]??'')==='missing-credentials'){
  reset_mock();$r=XI_Config::configuration_get('https://evil.invalid','/v1/lead/fields?type=lead','x');ok(is_wp_error($r)&&count($GLOBALS['http'])===0,'helper base gate');$r=XI_Config::configuration_get('https://api-sandbox.xiaoman.cn','/v1/lead/list','x');ok(is_wp_error($r)&&count($GLOBALS['http'])===0,'helper endpoint gate');case_done('helper allowlists');
  reset_mock();save_post();$r=invoke_save();ok($r===true&&count($GLOBALS['writes'])===1,'valid save');$saved=$GLOBALS['option'];ok($saved['origin_id']==='46500000000000'&&$saved['product_field']==='14206903842368'&&$saved['level_field']==='19675841541642','ID fields preserved');ok($saved['secrets']===array('id'=>'existing-encrypted-id','secret'=>'existing-encrypted-secret'),'blank credentials preserved');ok($saved['products']===array('forklift'=>'柴油叉车')&&$saved['field_aliases']===array('email'=>'F5'),'mapping fields retained');ok($saved['taxonomies']===array('product-category'),'taxonomy filtering retained');ok($saved['enabled']===false&&$saved['crm']===false&&$saved['capture_enabled']===false&&$saved['ads_enabled']===false,'other switches retained');case_done('save compatibility');
  reset_mock();save_post(array('api'=>''));ok(invoke_save()===true&&$GLOBALS['option']['api']===''&&$GLOBALS['option']['enabled']===false,'empty API saved while off');case_done('empty API while disabled');
+ reset_mock();save_post(array('taxonomies'=>'Tractors, product-category,tractors'));ok(invoke_save()===true&&$GLOBALS['option']['taxonomies']===array('Tractors','product-category'),'registered mixed-case taxonomy kept, unregistered lowercase alias dropped');case_done('mixed-case taxonomy key');
  reset_mock();save_post(array('api'=>'','enabled'=>'1'));$r=invoke_save();ok($r instanceof TestDie&&$GLOBALS['writes']===array(),'cannot enable empty API');case_done('empty API enable blocked');
  reset_mock();save_post(array('api'=>'https://api-sandbox.xiaoman.cn:443'));$r=invoke_save();ok($r instanceof TestDie&&$GLOBALS['writes']===array(),'invalid API fails before persistence');case_done('save invalid API rejected');
  reset_mock();save_post(array('api'=>'https://api.xiaoman.cn'));$r=invoke_save();ok($r instanceof TestDie&&$GLOBALS['writes']===array(),'unverified hostname cannot be saved');$r=XI_Config::configuration_get('https://api.xiaoman.cn','/v1/lead/fields?type=lead','x');ok(is_wp_error($r)&&$GLOBALS['http']===array(),'unverified hostname cannot receive requests');case_done('unverified hostname rejected');

@@ -106,7 +106,8 @@ final class XI_Config {
    foreach(array('origin_name','level_value') as $key)$c[$key]=sanitize_text_field(wp_unslash($_POST[$key]??''));
    $c['post_type']=sanitize_key($_POST['post_type']??$c['post_type']);
    if(!post_type_exists($c['post_type']))wp_die('产品文章类型不存在。');
-   $c['taxonomies']=array_values(array_filter(array_map('sanitize_key',preg_split('/[\s,]+/',wp_unslash($_POST['taxonomies']??''))),static function($t)use($c){return taxonomy_exists($t)&&is_object_in_taxonomy($c['post_type'],$t);}));
+   // Not sanitize_key(): it lowercases, and a registered key such as "Tractors" would then be dropped.
+   $c['taxonomies']=array_values(array_filter(array_map(static function($t){return preg_replace('/[^A-Za-z0-9_-]/','',$t);},preg_split('/[\s,]+/',wp_unslash($_POST['taxonomies']??''))),static function($t)use($c){return taxonomy_exists($t)&&is_object_in_taxonomy($c['post_type'],$t);}));
    foreach(array('products','product_lead_names','equipment_labels','field_aliases') as $key){$raw=json_decode(wp_unslash($_POST[$key]??'{}'),true);if(!is_array($raw))wp_die('映射必须为有效 JSON 对象。');$c[$key]=array();foreach($raw as $k=>$v)if(is_string($k)&&is_string($v))$c[$key][sanitize_text_field($k)]=sanitize_text_field($v);}
    foreach(array('id','secret') as $key){$v=trim(wp_unslash($_POST['client_'.$key]??''));if($v!==''){$encrypted=self::encrypt($v);if(is_wp_error($encrypted))wp_die($encrypted->get_error_message());$c['secrets'][$key]=$encrypted;}}
    $c['enabled']=isset($_POST['enabled']);

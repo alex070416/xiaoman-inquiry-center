@@ -219,6 +219,14 @@ reset_readiness();unset($GLOBALS['options'][XI_Config::OPTION]);
 verify_readiness('defaults cannot pass as saved identity',check_readiness(XI_Readiness::snapshot(),'stored_profile')['state']==='blocked');
 case_done_readiness('strict purpose types, domain binding and incomplete identity');
 
+reset_readiness();$GLOBALS['taxonomy']='Tractors';$GLOBALS['options'][XI_Config::OPTION]['taxonomies']=array('Tractors');
+verify_readiness('registered mixed-case taxonomy accepted',!in_array('taxonomy_missing',XI_Readiness::profile_errors($GLOBALS['options'][XI_Config::OPTION]),true));
+foreach (array('tractors','1Tractors','Trac tors') as $bad) {
+ reset_readiness();$GLOBALS['taxonomy']='Tractors';$GLOBALS['options'][XI_Config::OPTION]['taxonomies']=array($bad);
+ verify_readiness('unregistered or malformed taxonomy rejected: '.$bad,in_array('taxonomy_missing',XI_Readiness::profile_errors($GLOBALS['options'][XI_Config::OPTION]),true));
+}
+case_done_readiness('taxonomy keys matched case-sensitively');
+
 reset_readiness();$r=XI_Readiness::snapshot();verify_readiness('complete local receipt structure accepted',check_readiness($r,'receipt')['state']==='pass');
 foreach (array('missing-table','missing-ga4-owner','missing-ads-owner','missing-number-unique','missing-token-unique','nonunique-number','composite-number-only','missing-schema-version') as $fault) {
  reset_readiness();$db=$GLOBALS['wpdb'];
