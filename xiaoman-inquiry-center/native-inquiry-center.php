@@ -110,18 +110,25 @@ final class XI_Native_Inquiry_Center {
    return $attributes;
   }
   if($kind!=='detail')return $attributes;
-  if($term instanceof WP_Term && in_array($term->taxonomy,self::taxonomies(),true)) {
+  // Opt-in per form: list every category, starting on this page's category and product.
+  $choose=($element->settings['xiEquipmentScope']??'')==='catalog';
+  $own=$term instanceof WP_Term && in_array($term->taxonomy,self::taxonomies(),true);
+  if(!$choose && $own) {
    $packet=array('id'=>$term->term_id,'name'=>self::equipment($term),'signature'=>self::sign_category($term->term_id,$element->id),'products'=>self::category_products($term->term_id));
    if($product){$attributes[$key]['data-xi-product-page']='true';$packet['selected_product_id']=$pid;}
    $attributes[$key]['data-xi-category']=wp_json_encode($packet);return $attributes;
   }
+  // Read the page category before the loop below reuses $term.
+  $default=$choose && $own?$term->term_id:0;
   $catalog=array();$terms=get_terms(array('taxonomy'=>self::taxonomies(),'hide_empty'=>true,'orderby'=>'name','order'=>'ASC'));
   if(!is_wp_error($terms))foreach($terms as $term){
    if(in_array($term->slug,XI_Config::get()['excluded_terms'],true))continue;
    $products=self::category_products($term->term_id);if(!$products)continue;
    $catalog[]=array('id'=>$term->term_id,'name'=>self::equipment($term),'signature'=>self::sign_category($term->term_id,$element->id),'products'=>$products);
   }
-  $attributes[$key]['data-xi-catalog']=wp_json_encode(array('categories'=>$catalog,'empty_signature'=>self::sign_category(0,$element->id)));
+  $packet=array('categories'=>$catalog,'empty_signature'=>self::sign_category(0,$element->id));
+  if($default){$packet['default_category_id']=$default;if($product)$packet['selected_product_id']=$pid;}
+  $attributes[$key]['data-xi-catalog']=wp_json_encode($packet);
   return $attributes;
  }
  static function values($settings,$submitted) {

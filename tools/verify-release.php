@@ -54,7 +54,7 @@ function xi_release_public_key($path) {
     return $public;
 }
 function xi_release_package($version) {
-    return 'https://github.com/alex070416/xiaoman-inquiry-center/releases/download/v'.$version.'/xiaoman-inquiry-center-'.$version.'.zip';
+    return 'https://github.com/cixin123/xiaoman-inquiry-center/releases/download/v'.$version.'/xiaoman-inquiry-center-'.$version.'.zip';
 }
 function xi_release_member($name) {
     if (!is_string($name) || strpos($name, 'xiaoman-inquiry-center/') !== 0 || strpos($name, '\\') !== false || strpos($name, '//') !== false || preg_match('/[\x00-\x1f\x7f:<>"|?*]/', $name)) throw new RuntimeException('Unsafe ZIP member path.');

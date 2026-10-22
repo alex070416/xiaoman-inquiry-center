@@ -224,7 +224,7 @@ final class XI_Config {
   echo '<hr><h2>环境检查</h2><pre>'.esc_html(wp_json_encode(self::health(),JSON_PRETTY_PRINT|JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES)).'</pre>';
   echo '<h2>Cookies 配置</h2><p>同意服务缺失时仍可提交询盘；跨页面广告归因仅在用户同意后启用。</p><pre>'.esc_html(wp_json_encode(XI_Cookies::definitions(),JSON_PRETTY_PRINT|JSON_UNESCAPED_SLASHES)).'</pre>';
   if(post_type_exists('rcb-cookie')){echo '<form method="post" action="'.esc_url(admin_url('admin-post.php')).'"><input type="hidden" name="action" value="xi_cookie_prepare">';wp_nonce_field('xi_cookie_prepare');submit_button('准备 Cookies 服务配置','secondary');echo '</form>';}
-  echo '<p>升级源：<a href="https://github.com/alex070416/xiaoman-inquiry-center/releases">GitHub Releases</a>。测试版需人工升级，正式稳定版可使用 WordPress 自动更新。</p></div>';
+  echo '<p>升级源：<a href="https://github.com/cixin123/xiaoman-inquiry-center/releases">GitHub Releases</a>。测试版需人工升级，正式稳定版可使用 WordPress 自动更新。</p></div>';
  }
  static function health(){
   $c=self::get();return array('plugin'=>XI_VERSION,'wordpress'=>get_bloginfo('version'),'php'=>PHP_VERSION,'bricks'=>defined('BRICKS_VERSION')?BRICKS_VERSION:'missing','https'=>is_ssl(),'credentials'=>array('id'=>(bool)self::credential('id'),'secret'=>(bool)self::credential('secret')),'storage'=>class_exists('XI_Native_Inquiry_Center',false)?XI_Native_Inquiry_Center::exists():null,'queue'=>function_exists('as_enqueue_async_action'),'cron_disabled'=>defined('DISABLE_WP_CRON')&&DISABLE_WP_CRON,'last_recovery'=>get_option($c['queue_prefix'].'last_recovery_v1',0),'consent'=>XI_Cookies::status(),'legacy_conflict'=>XI_Compatibility::legacy_active(),'migration'=>$c['migration']);

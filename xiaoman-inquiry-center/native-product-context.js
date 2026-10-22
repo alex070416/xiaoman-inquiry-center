@@ -50,13 +50,17 @@
     initialized.add(form);
     equipment.replaceChildren();
     if (catalog) {
-      option(equipment, '', 'Select Your Equipment', true);
-      catalog.categories.forEach(function (c) { option(equipment, c.name, c.name, false); });
+      // Opted-in category/product pages list every category but start on their own.
+      var preset = catalog.categories.find(function (c) { return String(c.id) === String(catalog.default_category_id || ''); }) || null;
+      var presetProduct = String(catalog.selected_product_id || '');
+      option(equipment, '', 'Select Your Equipment', !preset);
+      catalog.categories.forEach(function (c) { option(equipment, c.name, c.name, c === preset); });
       function updateProducts() {
         var current = catalog.categories.find(function (c) { return c.name === equipment.value; });
+        var keep = current && current === preset && current.products.some(function (p) { return String(p.id) === presetProduct; }) ? presetProduct : '';
         model.replaceChildren();
-        option(model, '', 'Select Your Product', true);
-        (current ? current.products : []).forEach(function (p) { option(model, p.id, p.model, false); });
+        option(model, '', 'Select Your Product', !keep);
+        (current ? current.products : []).forEach(function (p) { option(model, p.id, p.model, String(p.id) === keep); });
         model.disabled = !current;
         setValue(form, 'Product', '');
         syncContext(form);

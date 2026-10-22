@@ -66,7 +66,7 @@ try{
   build_assert('synthetic signature verifies',sodium_crypto_sign_verify_detached($signature,$manifestBytes,$public));
   $manifest=json_decode($manifestBytes,true);$zipPath=$outDir.'/xiaoman-inquiry-center-2.0.0-beta.9.zip';
   build_assert('version and slug match',$manifest['version']==='2.0.0-beta.9'&&$manifest['slug']==='xiaoman-inquiry-center');
-  build_assert('versioned package URL matches',$manifest['package']==='https://github.com/alex070416/xiaoman-inquiry-center/releases/download/v2.0.0-beta.9/xiaoman-inquiry-center-2.0.0-beta.9.zip');
+  build_assert('versioned package URL matches',$manifest['package']==='https://github.com/cixin123/xiaoman-inquiry-center/releases/download/v2.0.0-beta.9/xiaoman-inquiry-center-2.0.0-beta.9.zip');
   build_assert('ZIP hash matches manifest',hash_file('sha256',$zipPath)===$manifest['sha256']);
   build_assert('source provenance included',preg_match('/^[a-f0-9]{64}$/D',$manifest['provenance']['source_sha256'])===1&&$manifest['provenance']['commit']===null&&$manifest['provenance']['tracked_tree_clean']===null);
   build_assert('SHA256SUMS matches ZIP',file_get_contents($outDir.'/SHA256SUMS')===$manifest['sha256'].'  '.basename($zipPath)."\n");

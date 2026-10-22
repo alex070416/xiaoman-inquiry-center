@@ -9,6 +9,7 @@ final class XI_Bricks {
  static function controls($controls){
   if(isset($controls['actions']['options']))$controls['actions']['options']['xiaoman-inquiry']='小满询盘';
   $controls['xiInquiryKind']=array('tab'=>'content','group'=>'actions','type'=>'select','label'=>'小满询盘表单类型','options'=>array(''=>'自动识别原表单','quick'=>'快速询盘','detail'=>'产品询盘'),'required'=>array('actions','=','xiaoman-inquiry'));
+  $controls['xiEquipmentScope']=array('tab'=>'content','group'=>'actions','type'=>'select','label'=>'产品询盘设备栏','options'=>array(''=>'锁定当前分类','catalog'=>'全部设备，默认当前分类'),'required'=>array('actions','=','xiaoman-inquiry'));
   return $controls;
  }
  static function order($errors,$form){

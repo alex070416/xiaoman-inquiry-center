@@ -39,7 +39,7 @@ try {
             case 'wrong-trusted-key': $trust = $wrongPublic; break;
             case 'wrong-bundled-key': $files[$prefix.'release-public-key.txt'] = base64_encode($wrongPublic); break;
             case 'invalid-bundled-key': $files[$prefix.'release-public-key.txt'] = 'not a public key'; break;
-            case 'wrong-repository': $manifest['package'] = str_replace('alex070416','attacker',$manifest['package']); break;
+            case 'wrong-repository': $manifest['package'] = str_replace('cixin123','attacker',$manifest['package']); break;
             case 'wrong-tag': $manifest['package'] = str_replace('/v2.0.0-beta.9/','/v2.0.0-beta.8/',$manifest['package']); break;
             case 'wrong-asset': $manifest['package'] = str_replace('.zip','-other.zip',$manifest['package']); break;
             case 'wrong-version': $files[$prefix.'xiaoman-inquiry-center.php'] = str_replace('2.0.0-beta.9','2.0.0-beta.8',$main); break;
