@@ -213,7 +213,8 @@ final class XI_Dashboard {
         $where = self::where($f);
         $count = (int)$wpdb->get_var('SELECT COUNT(*) FROM ' . $c::table() . ' WHERE ' . $where);
         $p = $c::paging($count, $_GET['paged'] ?? 1);
-        $rows = $wpdb->get_results($wpdb->prepare('SELECT * FROM ' . $c::table() . ' WHERE ' . $where . ' ORDER BY id DESC LIMIT %d OFFSET %d', $c::PER_PAGE, $p['offset']), ARRAY_A);
+        // Newest submission first; imported history rows have later ids than older live ones.
+        $rows = $wpdb->get_results($wpdb->prepare('SELECT * FROM ' . $c::table() . ' WHERE ' . $where . ' ORDER BY created_at DESC, id DESC LIMIT %d OFFSET %d', $c::PER_PAGE, $p['offset']), ARRAY_A);
         echo '<section class="uid-results"><form class="uid-bulk" method="post" action="' . esc_url(admin_url('admin-post.php')) . '">';
         self::hidden(array_merge($f,array('action'=>self::$prefix.'read','paged'=>$p['page']))); wp_nonce_field(self::$prefix.'read');
         echo '<div class="uid-bulk-toolbar"><div class="uid-bulk-buttons">';

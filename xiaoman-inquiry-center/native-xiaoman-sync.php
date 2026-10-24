@@ -23,8 +23,9 @@ final class XI_Native_Xiaoman_Sync {
  static function authorize_history($id) {
   if(!current_user_can('manage_options')) return false;
   if(!self::crm_enabled()) return false;
-  $id=absint($id);$saved=XI_Native_Inquiry_Center::row($id);
-  if(!$saved || !XI_Native_Inquiry_Center::record($saved) || XI_Native_Inquiry_Trash::has($id)) return false;
+  $id=absint($id);$saved=XI_Native_Inquiry_Center::row($id);$record=$saved?XI_Native_Inquiry_Center::record($saved):array();
+  // Imported history inquiries stay on the website only (owner decision 2026-10-24); they are never sent to Xiaoman.
+  if(!$saved || !$record || !empty($record['import']) || XI_Native_Inquiry_Trash::has($id)) return false;
   if(self::row($id)) return true;
   add_option(XI_QUEUE_PREFIX.'manual_v1_'.$id,array('user_id'=>get_current_user_id(),'at'=>gmdate('Y-m-d H:i:s')),'',false);
   return self::capture($id);

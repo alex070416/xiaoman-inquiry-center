@@ -438,8 +438,9 @@ final class XI_Native_Inquiry_Center {
   $filters=self::filters(wp_unslash($_GET)); $where=self::where($filters); global $wpdb;
   $count=(int)$wpdb->get_var('SELECT COUNT(*) FROM '.self::table().' WHERE '.$where);
   $paging=self::paging($count,$_GET['paged']??1);
-  $rows=$wpdb->get_results($wpdb->prepare('SELECT * FROM '.self::table().' WHERE '.$where.' ORDER BY id DESC LIMIT %d OFFSET %d',self::PER_PAGE,$paging['offset']),ARRAY_A);
-  echo '<p>原生提交保存后出现在这里。原有 Bricksforge 记录继续保留；已启用 Custom 的新询盘保存后自动进入小满同步队列。</p>';
+  // Newest submission first. Imported pre-plugin inquiries get later row ids than older live ones, so the id is only the tiebreak.
+  $rows=$wpdb->get_results($wpdb->prepare('SELECT * FROM '.self::table().' WHERE '.$where.' ORDER BY created_at DESC, id DESC LIMIT %d OFFSET %d',self::PER_PAGE,$paging['offset']),ARRAY_A);
+  echo '<p>原生提交保存后出现在这里，按提交时间从新到旧排列。导入的 Bricksforge 历史询盘标为已读，不同步小满；已启用 Custom 的新询盘保存后自动进入小满同步队列。</p>';
   $trash=$filters['view']==='trash';
   $trash_count=(int)$wpdb->get_var('SELECT COUNT(*) FROM '.self::table().' WHERE '.self::base_where().XI_Native_Inquiry_Trash::clause(true));
   echo '<p><a class="button" href="'.esc_url(self::url()).'">询盘列表</a> <a class="button" href="'.esc_url(self::url(array('view'=>'trash'))).'">回收站（'.$trash_count.'）</a></p>';
